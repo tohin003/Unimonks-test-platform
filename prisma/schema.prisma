@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum BatchStatus {
+  ACTIVE
+  UPCOMING
+  COMPLETED
+}
+
+enum TestStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TestSource {
+  MANUAL
+  AI_GENERATED
+}
+
+enum SessionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+  FORCE_SUBMITTED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id                 String       @id @default(uuid()) @db.Uuid
+  email              String       @unique
+  name               String
+  passwordHash       String
+  role               Role         @default(STUDENT)
+  status             UserStatus   @default(ACTIVE)
+  mustChangePassword Boolean      @default(true)
+  resetToken         String?
+  resetTokenExpiry   DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  taughtBatches      Batch[]          @relation("TeacherBatches")
+  batchEnrollments   BatchStudent[]
+  createdTests       Test[]           @relation("TeacherTests")
+  testSessions       TestSession[]
+  auditLogs          AuditLog[]
+  testAssignments    TestAssignment[] @relation("StudentAssignments")
+}
+
+model Batch {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String
+  code        String           @unique
+  teacherId   String           @db.Uuid
+  status      BatchStatus      @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+
+  teacher     User             @relation("TeacherBatches", fields: [teacherId], references: [id])
+  students    BatchStudent[]
+  assignments TestAssignment[]
+}
+
+model BatchStudent {
+  batchId     String @db.Uuid
+  studentId   String @db.Uuid
+
+  batch       Batch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  student     User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([batchId, studentId])
+}
+
+model Test {
+  id              String           @id @default(uuid()) @db.Uuid
+  teacherId       String           @db.Uuid
+  title           String
+  description     String?          @db.Text
+  durationMinutes Int
+  status          TestStatus       @default(DRAFT)
+  source          TestSource       @default(MANUAL)
+  settings        Json             @default("{}")
+  scheduledAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  teacher         User             @relation("TeacherTests", fields: [teacherId], references: [id])
+  questions       Question[]
+  assignments     TestAssignment[]
+  sessions        TestSession[]
+}
+
+model Question {
+  id          String     @id @default(uuid()) @db.Uuid
+  testId      String     @db.Uuid
+  order       Int
+  stem        String     @db.Text
+  options     Json       
+  explanation String?    @db.Text
+  difficulty  Difficulty @default(MEDIUM)
+  topic       String?    
+
+  test        Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
+}
+
+model TestAssignment {
+  id          String    @id @default(uuid()) @db.Uuid
+  testId      String    @db.Uuid
+  batchId     String?   @db.Uuid
+  studentId   String?   @db.Uuid
+  assignedAt  DateTime  @default(now())
+
+  test        Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  batch       Batch?    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  student     User?     @relation("StudentAssignments", fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model TestSession {
+  id              String        @id @default(uuid()) @db.Uuid
+  testId          String        @db.Uuid
+  studentId       String        @db.Uuid
+  status          SessionStatus @default(IN_PROGRESS)
+  startedAt       DateTime      @default(now())
+  serverDeadline  DateTime      
+  submittedAt     DateTime?
+  answers         Json?         
+  tabSwitchCount  Int           @default(0)
+  score           Int?          
+  totalMarks      Int
+  percentage      Float?
+
+  test            Test          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  student         User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  aiFeedback      AIFeedback?
+}
+
+model AIFeedback {
+  id                   String      @id @default(uuid()) @db.Uuid
+  testSessionId        String      @unique @db.Uuid
+  strengths            Json        
+  weaknesses           Json        
+  actionPlan           Json        
+  questionExplanations Json        
+  overallTag           String?     
+  generatedAt          DateTime    @default(now())
+
+  testSession          TestSession @relation(fields: [testSessionId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  action      String
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
