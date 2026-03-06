@@ -4,109 +4,75 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar, ChevronDown, Sparkles, MoveRight } from "lucide-react";
+import { Calendar, Sparkles, MoveRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { apiClient } from "@/lib/api-client";
 
-const performanceData = [
-    { name: "Quiz 1", score: 65, average: 50 },
-    { name: "Midterm", score: 72, average: 60 },
-    { name: "Quiz 2", score: 68, average: 62 },
-    { name: "Unit 3", score: 85, average: 65 },
-    { name: "Quiz 3", score: 88, average: 68 },
-    { name: "Final Prep", score: 92, average: 72 },
-];
+type UpcomingTest = {
+    id: string;
+    title: string;
+    description: string | null;
+    durationMinutes: number;
+    scheduledAt: string | null;
+    teacherName: string;
+    questionCount: number;
+};
 
-function NextTestSkeleton() {
+type RecentResult = {
+    testTitle: string;
+    score: number;
+    totalQuestions: number;
+    correctAnswers: number;
+    completedAt: string;
+    sessionId: string;
+};
+
+type DashboardStats = {
+    testsAttempted: number;
+    avgScore: number;
+    bestScore: number;
+};
+
+type DashboardData = {
+    upcoming: UpcomingTest[];
+    recent: RecentResult[];
+    stats: DashboardStats;
+};
+
+function DashboardSkeleton() {
     return (
-        <div className="relative overflow-hidden rounded-[2rem] p-8 md:p-10 border border-slate-100 bg-white" style={{ boxShadow: "var(--shadow-clay-outer)" }}>
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-                <div className="space-y-4 flex-1">
-                    <Skeleton className="h-6 w-24 rounded-full mb-2" />
-                    <Skeleton className="h-8 w-3/4 rounded-xl" />
-                    <Skeleton className="h-16 w-64 rounded-2xl mt-4" />
-                    <Skeleton className="h-5 w-48 rounded-md mt-4" />
-                </div>
-                <div className="flex flex-col items-start md:items-end gap-3 shrink-0 mt-4 md:mt-0">
-                    <Skeleton className="h-14 w-48 rounded-2xl" />
-                    <Skeleton className="h-4 w-40 rounded-md" />
-                </div>
+        <div className="flex flex-col gap-8 w-full max-w-6xl mx-auto pb-10">
+            <div className="border-b pb-6" style={{ borderColor: "var(--border-soft)" }}>
+                <Skeleton className="h-9 w-64 mb-2" />
+                <Skeleton className="h-4 w-80" />
             </div>
-        </div>
-    );
-}
-
-function NextTestWidget() {
-    const [isLoading, setIsLoading] = useState(true);
-    // Live countdown timer: starts at 1h 45m 32s = 6332 seconds
-    const [timeLeft, setTimeLeft] = useState(6332);
-
-    useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 800);
-        return () => clearTimeout(timer);
-    }, []);
-
-    useEffect(() => {
-        if (isLoading) return;
-        const interval = setInterval(() => {
-            setTimeLeft((prev) => {
-                if (prev <= 0) return 0;
-                return prev - 1;
-            });
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [isLoading]);
-
-    const hours = Math.floor(timeLeft / 3600);
-    const minutes = Math.floor((timeLeft % 3600) / 60);
-    const seconds = timeLeft % 60;
-    const pad = (n: number) => String(n).padStart(2, "0");
-
-    if (isLoading) {
-        return <NextTestSkeleton />;
-    }
-
-    return (
-        <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-500 via-indigo-600 to-indigo-800 p-8 md:p-10" style={{ boxShadow: "var(--shadow-clay-outer)" }}>
-            <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-8">
-                <div className="space-y-5 flex-1">
-                    <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 font-bold uppercase tracking-wider text-[10px] px-3 py-1 mb-2">Live Now</Badge>
-                    <h2 className="text-2xl md:text-3xl font-serif font-bold text-white leading-tight">Advanced Physics Mid-Term</h2>
-
-                    <div className="flex items-center gap-3 text-3xl md:text-5xl font-bold font-mono tracking-tight mt-2">
-                        <div className="bg-white/10 backdrop-blur-md text-white rounded-2xl px-4 py-3 shadow-inner border border-white/10">{pad(hours)}</div>
-                        <span className="text-white/50 py-2 animate-pulse">:</span>
-                        <div className="bg-white/10 backdrop-blur-md text-white rounded-2xl px-4 py-3 shadow-inner border border-white/10">{pad(minutes)}</div>
-                        <span className="text-white/50 py-2 animate-pulse">:</span>
-                        <div className="bg-white/10 backdrop-blur-md text-white rounded-2xl px-4 py-3 shadow-inner border border-white/10">{pad(seconds)}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-indigo-100 text-sm mt-4 font-medium">
-                        <Calendar className="h-4 w-4" />
-                        <span>Oct 25, 2024 • 2:00 PM - 3:30 PM</span>
-                    </div>
-                </div>
-
-                <div className="flex flex-col items-start md:items-end gap-4 shrink-0">
-                    <Button asChild className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-lg px-8 py-6 rounded-2xl shadow-clay-inner transition-transform hover:scale-105">
-                        <Link href="/arena/demo">
-                            Enter Test Arena <MoveRight className="ml-2 h-5 w-5" />
-                        </Link>
-                    </Button>
-                    <p className="text-indigo-200 text-xs font-medium pr-2">Test has started. Do not be late.</p>
-                </div>
+            <Skeleton className="h-48 rounded-[2rem]" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <Skeleton className="h-72 rounded-3xl" />
+                <Skeleton className="h-72 rounded-3xl" />
             </div>
-
-            {/* Background decorative elements */}
-            <div className="absolute top-0 right-0 -mt-16 -mr-16 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 -mb-24 -ml-24 w-64 h-64 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none"></div>
         </div>
     );
 }
 
 export default function StudentDashboard() {
+    const [data, setData] = useState<DashboardData | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        (async () => {
+            const res = await apiClient.get<DashboardData>("/api/student/dashboard");
+            if (res.ok) setData(res.data);
+            setIsLoading(false);
+        })();
+    }, []);
+
+    if (isLoading || !data) return <DashboardSkeleton />;
+
+    const nextTest = data.upcoming[0];
+
     return (
         <div className="flex flex-col gap-8 w-full max-w-6xl mx-auto pb-10">
             <div className="flex items-center justify-between border-b pb-6" style={{ borderColor: "var(--border-soft)" }}>
@@ -116,8 +82,56 @@ export default function StudentDashboard() {
                 </div>
             </div>
 
-            {/* Hero Banner / Next Test Widget */}
-            <NextTestWidget />
+            {/* Next Test Banner */}
+            {nextTest ? (
+                <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-500 via-indigo-600 to-indigo-800 p-8 md:p-10" style={{ boxShadow: "var(--shadow-clay-outer)" }}>
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-8">
+                        <div className="space-y-4 flex-1">
+                            <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 font-bold uppercase tracking-wider text-[10px] px-3 py-1 mb-2">Upcoming</Badge>
+                            <h2 className="text-2xl md:text-3xl font-serif font-bold text-white leading-tight">{nextTest.title}</h2>
+                            <div className="flex flex-col gap-1 text-indigo-100 text-sm font-medium">
+                                <span>{nextTest.questionCount} Questions • {nextTest.durationMinutes} min</span>
+                                <span>by {nextTest.teacherName}</span>
+                            </div>
+                            {nextTest.scheduledAt && (
+                                <div className="flex items-center gap-2 text-indigo-100 text-sm mt-2">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>{new Date(nextTest.scheduledAt).toLocaleString()}</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex flex-col items-start md:items-end gap-4 shrink-0">
+                            <Button asChild className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-lg px-8 py-6 rounded-2xl shadow-clay-inner transition-transform hover:scale-105">
+                                <Link href={`/arena/${nextTest.id}`}>
+                                    Enter Test Arena <MoveRight className="ml-2 h-5 w-5" />
+                                </Link>
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="absolute top-0 right-0 -mt-16 -mr-16 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 -mb-24 -ml-24 w-64 h-64 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none" />
+                </div>
+            ) : (
+                <div className="rounded-[2rem] bg-surface-2 p-8 text-center text-slate-500 font-medium" style={{ boxShadow: "var(--shadow-clay-outer)" }}>
+                    No upcoming tests right now. Check back later!
+                </div>
+            )}
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-3 gap-4">
+                {[
+                    { label: "Tests Taken", value: data.stats.testsAttempted },
+                    { label: "Avg Score", value: `${data.stats.avgScore}%` },
+                    { label: "Best Score", value: `${data.stats.bestScore}%` },
+                ].map(s => (
+                    <Card key={s.label} className="bg-white rounded-2xl border-0" style={{ boxShadow: "var(--shadow-clay-outer)" }}>
+                        <CardContent className="p-5 text-center">
+                            <div className="text-2xl font-serif font-bold text-slate-900">{s.value}</div>
+                            <div className="text-xs text-slate-500 font-medium mt-1">{s.label}</div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
 
             {/* Grid Layout */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
@@ -127,92 +141,57 @@ export default function StudentDashboard() {
                         <CardTitle className="text-xl font-serif font-bold text-slate-800">Recent Results</CardTitle>
                     </CardHeader>
                     <CardContent className="p-8 flex flex-col gap-8 flex-1">
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h4 className="font-bold text-slate-800 text-base font-serif">Calculus Quiz 3</h4>
-                                    <p className="text-sm text-slate-500 mt-1">Score: 88%</p>
+                        {data.recent.length === 0 ? (
+                            <div className="text-center text-slate-400 py-8">No results yet. Take a test!</div>
+                        ) : (
+                            data.recent.map((r, i) => (
+                                <div key={i} className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 text-base font-serif">{r.testTitle}</h4>
+                                            <p className="text-sm text-slate-500 mt-1">Score: {r.score}% ({r.correctAnswers}/{r.totalQuestions})</p>
+                                        </div>
+                                        <Link href={`/student/results/${r.sessionId}`}>
+                                            <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md cursor-pointer hover:bg-emerald-100">View</span>
+                                        </Link>
+                                    </div>
+                                    <Progress value={r.score} className="h-3 rounded-full bg-surface-2" indicatorClassName={`${r.score >= 80 ? 'bg-emerald-500' : r.score >= 60 ? 'bg-amber-500' : 'bg-rose-500'} rounded-full`} />
                                 </div>
-                                <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md">Completed</span>
-                            </div>
-                            <Progress value={88} className="h-3 rounded-full bg-surface-2" indicatorClassName="bg-emerald-500 rounded-full" />
-                        </div>
-
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h4 className="font-bold text-slate-800 text-base font-serif">Biology Unit Test</h4>
-                                    <p className="text-sm text-slate-500 mt-1">Score: 92%</p>
-                                </div>
-                                <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md">Completed</span>
-                            </div>
-                            <Progress value={92} className="h-3 rounded-full bg-surface-2" indicatorClassName="bg-indigo-500 rounded-full" />
-                        </div>
-
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h4 className="font-bold text-slate-800 text-base font-serif">Chemistry Basics</h4>
-                                    <p className="text-sm text-slate-500 mt-1">Score: 65%</p>
-                                </div>
-                                <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md">Completed</span>
-                            </div>
-                            <Progress value={65} className="h-3 rounded-full bg-surface-2" indicatorClassName="bg-amber-500 rounded-full" />
-                        </div>
+                            ))
+                        )}
                     </CardContent>
                 </Card>
 
-                <div className="flex flex-col gap-8">
-                    {/* Performance Overview Chart */}
-                    <Card className="bg-white rounded-3xl border-0 overflow-hidden">
-                        <CardHeader className="pb-4 p-8 border-b bg-surface" style={{ borderColor: 'var(--border-soft)' }}>
-                            <CardTitle className="text-xl font-serif font-bold text-slate-800">Performance Over Time</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-8 pt-6 relative h-[280px]">
-                            <div className="flex items-center gap-6 text-sm font-semibold text-slate-500 mb-6 relative z-10 w-full justify-center">
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm"></div> Your Score</div>
-                                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-300"></div> Class Average</div>
-                            </div>
-                            <div className="h-[180px] w-full mt-2">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={performanceData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                                        <defs>
-                                            <linearGradient id="colorScoreStudent" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} dy={10} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 11 }} />
-                                        <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }} />
-                                        <Area type="monotone" dataKey="average" stroke="#CBD5E1" strokeWidth={2} fillOpacity={0} />
-                                        <Area type="monotone" dataKey="score" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorScoreStudent)" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* AI Recommendations */}
-                    <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-3xl border border-indigo-100 overflow-hidden shadow-sm">
-                        <CardHeader className="pb-3 p-6 border-b border-white/50 bg-white/50 backdrop-blur-sm">
-                            <CardTitle className="text-lg font-serif font-bold text-indigo-900 flex items-center gap-2">
-                                <Sparkles className="h-5 w-5 text-indigo-500" />
-                                AI Study Recommendations
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-6">
-                            <div className="flex flex-col gap-2">
-                                <h4 className="font-bold text-indigo-900 text-sm font-serif">Recommended Focus: Thermodynamics</h4>
+                {/* AI Recommendations */}
+                <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-3xl border border-indigo-100 overflow-hidden shadow-sm">
+                    <CardHeader className="pb-3 p-6 border-b border-white/50 bg-white/50 backdrop-blur-sm">
+                        <CardTitle className="text-lg font-serif font-bold text-indigo-900 flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-indigo-500" />
+                            AI Study Recommendations
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                        <div className="flex flex-col gap-2">
+                            {data.stats.testsAttempted > 0 ? (
+                                <>
+                                    <h4 className="font-bold text-indigo-900 text-sm font-serif">
+                                        {data.stats.avgScore >= 80 ? "Great Performance!" : "Focus Areas Identified"}
+                                    </h4>
+                                    <p className="text-sm text-indigo-800/80 leading-relaxed">
+                                        {data.stats.avgScore >= 80
+                                            ? `You're averaging ${data.stats.avgScore}% across ${data.stats.testsAttempted} tests. Keep up the excellent work!`
+                                            : `Your average across ${data.stats.testsAttempted} tests is ${data.stats.avgScore}%. Review topics from recent tests where you scored below 70%.`
+                                        }
+                                    </p>
+                                </>
+                            ) : (
                                 <p className="text-sm text-indigo-800/80 leading-relaxed">
-                                    Based on your last 3 physics quizzes, your accuracy drops by 20% on questions involving the Second Law of Thermodynamics. Review chapter 4 notes before the upcoming mid-term.
+                                    Take your first test to get personalised study recommendations.
                                 </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
         </div>
     );

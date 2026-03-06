@@ -44,6 +44,12 @@ const items: NavItem[] = [
         icon: FolderOpen,
         roles: ["admin"],
     },
+    {
+        title: "Test Management",
+        url: "/admin/tests",
+        icon: FileText,
+        roles: ["admin"],
+    },
     // Teacher
     {
         title: "Dashboard",

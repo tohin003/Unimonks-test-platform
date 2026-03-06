@@ -2,26 +2,45 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Users, BookOpen, GraduationCap, TrendingUp, Building } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useState, useEffect } from "react";
+import { apiClient } from "@/lib/api-client";
 
-// Mock Data
-const userGrowthData = [
-    { name: "Jan", students: 400, teachers: 24 },
-    { name: "Feb", students: 600, teachers: 35 },
-    { name: "Mar", students: 800, teachers: 42 },
-    { name: "Apr", students: 1100, teachers: 55 },
-    { name: "May", students: 1540, teachers: 68 },
-    { name: "Jun", students: 1980, teachers: 80 },
-];
-
-const batchSummary = [
-    { name: "Physics 101", students: 120, avgScore: 78, status: "Active" },
-    { name: "Chemistry Adv", students: 85, avgScore: 82, status: "Active" },
-    { name: "Math Fundamentals", students: 210, avgScore: 65, status: "Needs Attention" },
-    { name: "Biology Prep", students: 95, avgScore: 88, status: "Excellent" },
-];
+type OverviewData = {
+    users: { total: number; admin: number; teacher: number; student: number };
+    tests: { total: number; draft: number; published: number; archived: number };
+    sessions: { completed: number; active: number };
+    avgScore: number;
+};
 
 export default function AdminDashboardPage() {
+    const [data, setData] = useState<OverviewData | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        (async () => {
+            const res = await apiClient.get<OverviewData>("/api/admin/analytics/overview");
+            if (res.ok) setData(res.data);
+            setIsLoading(false);
+        })();
+    }, []);
+
+    if (isLoading) {
+        return (
+            <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto pb-10">
+                <div className="border-b pb-6" style={{ borderColor: "var(--border-soft)" }}>
+                    <Skeleton className="h-9 w-64 mb-2" />
+                    <Skeleton className="h-4 w-80" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-36 rounded-2xl" />)}
+                </div>
+            </div>
+        );
+    }
+
+    const d = data ?? { users: { total: 0, admin: 0, teacher: 0, student: 0 }, tests: { total: 0, draft: 0, published: 0, archived: 0 }, sessions: { completed: 0, active: 0 }, avgScore: 0 };
+
     return (
         <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto pb-10">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b pb-6 gap-4" style={{ borderColor: "var(--border-soft)" }}>
@@ -44,9 +63,9 @@ export default function AdminDashboardPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="relative z-10 p-6 pt-0">
-                        <div className="text-4xl font-serif font-bold">1,980</div>
+                        <div className="text-4xl font-serif font-bold">{d.users.student.toLocaleString()}</div>
                         <p className="text-xs text-indigo-200 mt-1 flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" /> +22.5% from last month
+                            <TrendingUp className="h-3 w-3" /> {d.users.total} total users
                         </p>
                     </CardContent>
                 </Card>
@@ -59,9 +78,9 @@ export default function AdminDashboardPage() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 pt-0">
-                        <div className="text-4xl font-serif font-bold text-slate-900">80</div>
+                        <div className="text-4xl font-serif font-bold text-slate-900">{d.users.teacher}</div>
                         <p className="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" /> +12 new onboarded
+                            <TrendingUp className="h-3 w-3" /> {d.users.admin} admins
                         </p>
                     </CardContent>
                 </Card>
@@ -69,14 +88,14 @@ export default function AdminDashboardPage() {
                 <Card className="bg-white" style={{ border: "var(--border-soft)" }}>
                     <CardHeader className="pb-2 p-6">
                         <CardTitle className="text-sm font-medium text-slate-500 flex items-center justify-between">
-                            Active Batches
-                            <Building className="h-4 w-4 text-amber-500" />
+                            Tests Created
+                            <BookOpen className="h-4 w-4 text-amber-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 pt-0">
-                        <div className="text-4xl font-serif font-bold text-slate-900">24</div>
+                        <div className="text-4xl font-serif font-bold text-slate-900">{d.tests.total}</div>
                         <p className="text-xs text-slate-500 mt-1">
-                            Across 4 major domains
+                            {d.tests.published} published · {d.tests.draft} draft
                         </p>
                     </CardContent>
                 </Card>
@@ -84,69 +103,71 @@ export default function AdminDashboardPage() {
                 <Card className="bg-white" style={{ border: "var(--border-soft)" }}>
                     <CardHeader className="pb-2 p-6">
                         <CardTitle className="text-sm font-medium text-slate-500 flex items-center justify-between">
-                            Tests Conducted
-                            <BookOpen className="h-4 w-4 text-rose-500" />
+                            Test Sessions
+                            <Building className="h-4 w-4 text-rose-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 pt-0">
-                        <div className="text-4xl font-serif font-bold text-slate-900">1,204</div>
+                        <div className="text-4xl font-serif font-bold text-slate-900">{d.sessions.completed.toLocaleString()}</div>
                         <p className="text-xs text-slate-500 mt-1">
-                            All time platform usage
+                            Avg Score: {d.avgScore}%
                         </p>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Charts Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="col-span-1 lg:col-span-2 bg-white" style={{ border: "var(--border-soft)" }}>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="bg-white" style={{ border: "var(--border-soft)" }}>
                     <CardHeader className="p-6 pb-2">
-                        <CardTitle className="font-serif">User Growth</CardTitle>
-                        <CardDescription>New student and teacher signups over 6 months</CardDescription>
+                        <CardTitle className="font-serif">User Breakdown</CardTitle>
+                        <CardDescription>Active users by role</CardDescription>
                     </CardHeader>
-                    <CardContent className="p-6 pt-0">
-                        <div className="h-[300px] w-full mt-4">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={userGrowthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="colorStudents" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} dy={10} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B', fontSize: 12 }} />
-                                    <Tooltip
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    />
-                                    <Area type="monotone" dataKey="students" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorStudents)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                    <CardContent className="p-6 pt-4">
+                        <div className="space-y-4">
+                            {([
+                                { label: "Students", count: d.users.student, color: "bg-indigo-500" },
+                                { label: "Teachers", count: d.users.teacher, color: "bg-emerald-500" },
+                                { label: "Admins", count: d.users.admin, color: "bg-amber-500" },
+                            ]).map(item => (
+                                <div key={item.label} className="flex items-center gap-4">
+                                    <div className={`w-3 h-3 rounded-full ${item.color}`} />
+                                    <span className="text-sm font-medium text-slate-700 w-24">{item.label}</span>
+                                    <div className="flex-1 bg-slate-100 rounded-full h-2">
+                                        <div
+                                            className={`h-2 rounded-full ${item.color}`}
+                                            style={{ width: `${d.users.total > 0 ? (item.count / d.users.total * 100) : 0}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-900 w-12 text-right">{item.count}</span>
+                                </div>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Batch Breakdown */}
-                <Card className="col-span-1 bg-white flex flex-col" style={{ border: "var(--border-soft)" }}>
+                <Card className="bg-white" style={{ border: "var(--border-soft)" }}>
                     <CardHeader className="p-6 pb-2">
-                        <CardTitle className="font-serif">Top Batches</CardTitle>
-                        <CardDescription>By student enrollment</CardDescription>
+                        <CardTitle className="font-serif">Test Status Overview</CardTitle>
+                        <CardDescription>Tests by current status</CardDescription>
                     </CardHeader>
-                    <CardContent className="p-6 pt-0 flex-1 flex flex-col justify-center">
-                        <div className="space-y-6 mt-2">
-                            {batchSummary.map((batch, i) => (
-                                <div key={i} className="flex items-center justify-between">
-                                    <div className="flex flex-col gap-1">
-                                        <span className="font-medium text-slate-900 text-sm">{batch.name}</span>
-                                        <span className="text-xs text-slate-500">{batch.students} Students • Avg Top Score: {batch.avgScore}%</span>
+                    <CardContent className="p-6 pt-4">
+                        <div className="space-y-4">
+                            {([
+                                { label: "Published", count: d.tests.published, color: "bg-emerald-500" },
+                                { label: "Draft", count: d.tests.draft, color: "bg-amber-500" },
+                                { label: "Archived", count: d.tests.archived, color: "bg-slate-400" },
+                            ]).map(item => (
+                                <div key={item.label} className="flex items-center gap-4">
+                                    <div className={`w-3 h-3 rounded-full ${item.color}`} />
+                                    <span className="text-sm font-medium text-slate-700 w-24">{item.label}</span>
+                                    <div className="flex-1 bg-slate-100 rounded-full h-2">
+                                        <div
+                                            className={`h-2 rounded-full ${item.color}`}
+                                            style={{ width: `${d.tests.total > 0 ? (item.count / d.tests.total * 100) : 0}%` }}
+                                        />
                                     </div>
-                                    <div className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${batch.status === 'Active' ? 'bg-indigo-50 text-indigo-600' :
-                                            batch.status === 'Excellent' ? 'bg-emerald-50 text-emerald-600' :
-                                                'bg-rose-50 text-rose-600'
-                                        }`}>
-                                        {batch.status}
-                                    </div>
+                                    <span className="text-sm font-bold text-slate-900 w-12 text-right">{item.count}</span>
                                 </div>
                             ))}
                         </div>

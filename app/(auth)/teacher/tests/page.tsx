@@ -7,22 +7,77 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 
-// Mock Data
-const tests = [
-    { id: 1, name: "Physics Mid-Term", batch: "Physics 101 Evening", batchCode: "PHY-101-E", date: "Oct 25, 2024", status: "Active", responses: 120 },
-    { id: 2, name: "Chemistry Quiz", batch: "Chemistry Advanced", batchCode: "CHE-ADV-M", date: "Oct 20, 2024", status: "Completed", responses: 115 },
-    { id: 3, name: "Biology Unit Test", batch: "Biology Prep 2024", batchCode: "BIO-PRP-24", date: "Oct 15, 2024", status: "Completed", responses: 118 },
-];
+type TestItem = {
+    id: string;
+    title: string;
+    description: string | null;
+    durationMinutes: number;
+    status: string;
+    source: string;
+    scheduledAt: string | null;
+    questionCount: number;
+    attemptCount: number;
+    createdAt: string;
+};
+
+type TestsResponse = {
+    tests: TestItem[];
+    total: number;
+    page: number;
+    totalPages: number;
+};
 
 export default function MyTestsPage() {
     const [isLoading, setIsLoading] = useState(true);
+    const [tests, setTests] = useState<TestItem[]>([]);
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
-    useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 500);
-        return () => clearTimeout(timer);
-    }, []);
+    const fetchTests = async () => {
+        setIsLoading(true);
+        const res = await apiClient.get<TestsResponse>("/api/teacher/tests");
+        if (res.ok) {
+            // Sort: upcoming scheduled first, then by creation date
+            const sorted = res.data.tests.sort((a, b) => {
+                if (a.scheduledAt && b.scheduledAt) return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+                if (a.scheduledAt) return -1;
+                if (b.scheduledAt) return 1;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+            setTests(sorted);
+        }
+        setIsLoading(false);
+    };
+
+    useEffect(() => { fetchTests(); }, []);
+
+    const handleDelete = (id: string, title: string) => {
+        setDeleteTarget({ id, title });
+    };
+
+    const handlePermanentDelete = async () => {
+        if (!deleteTarget) return;
+        console.log('[DELETE] Attempting to delete test:', deleteTarget.id, deleteTarget.title);
+        const res = await apiClient.delete(`/api/teacher/tests/${deleteTarget.id}`);
+        if (res.ok) {
+            toast.success("Test deleted", { description: `"${deleteTarget.title}" has been removed.` });
+            setTests(prev => prev.filter(t => t.id !== deleteTarget.id));
+            setDeleteTarget(null);
+        } else {
+            toast.error("Failed to delete", { description: res.message || "Only DRAFT tests can be deleted." });
+        }
+    };
+
+    const statusBadge = (status: string) => {
+        const s = status.toLowerCase();
+        if (s === "published") return "bg-indigo-50 text-indigo-700 border-none";
+        if (s === "draft") return "bg-amber-50 text-amber-700 border-none";
+        return "bg-emerald-50 text-emerald-700 border-none";
+    };
 
     return (
         <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto">
@@ -45,10 +100,11 @@ export default function MyTestsPage() {
                         <TableHeader className="bg-slate-50/80">
                             <TableRow>
                                 <TableHead className="font-semibold text-slate-700 w-[200px] pl-6">Test Name</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Batch</TableHead>
-                                <TableHead className="font-semibold text-slate-700">Date Created</TableHead>
+                                <TableHead className="font-semibold text-slate-700">Scheduled</TableHead>
+                                <TableHead className="font-semibold text-slate-700">Duration</TableHead>
+                                <TableHead className="font-semibold text-slate-700">Questions</TableHead>
                                 <TableHead className="font-semibold text-slate-700">Status</TableHead>
-                                <TableHead className="font-semibold text-slate-700 text-center">Responses</TableHead>
+                                <TableHead className="font-semibold text-slate-700 text-center">Attempts</TableHead>
                                 <TableHead className="text-right pr-6 font-semibold text-slate-700">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -57,13 +113,8 @@ export default function MyTestsPage() {
                                 [1, 2, 3].map((i) => (
                                     <TableRow key={`skeleton-${i}`}>
                                         <TableCell className="pl-6"><Skeleton className="h-5 w-40 rounded-md" /></TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col gap-1">
-                                                <Skeleton className="h-4 w-32 rounded-md" />
-                                                <Skeleton className="h-3 w-20 rounded-md" />
-                                            </div>
-                                        </TableCell>
-                                        <TableCell><Skeleton className="h-4 w-24 rounded-md" /></TableCell>
+                                        <TableCell><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
+                                        <TableCell><Skeleton className="h-4 w-12 rounded-md" /></TableCell>
                                         <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                                         <TableCell className="text-center"><Skeleton className="h-4 w-8 mx-auto rounded-md" /></TableCell>
                                         <TableCell className="text-right pr-6 flex justify-end gap-2">
@@ -72,30 +123,36 @@ export default function MyTestsPage() {
                                         </TableCell>
                                     </TableRow>
                                 ))
+                            ) : tests.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center py-12 text-slate-400">
+                                        No tests yet. Create your first test!
+                                    </TableCell>
+                                </TableRow>
                             ) : (
                                 tests.map((test) => (
                                     <TableRow key={test.id} className="group">
                                         <TableCell className="font-medium text-slate-900 pl-6">
-                                            {test.name}
+                                            {test.title}
                                         </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-slate-700">{test.batch}</span>
-                                                <span className="text-[10px] text-slate-400 font-mono">{test.batchCode}</span>
-                                            </div>
+                                        <TableCell className="text-slate-600 text-sm">
+                                            {test.scheduledAt ? new Date(test.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : <span className="text-slate-400">Not set</span>}
                                         </TableCell>
-                                        <TableCell className="text-slate-600">{test.date}</TableCell>
+                                        <TableCell className="text-slate-600">
+                                            {test.durationMinutes} min
+                                        </TableCell>
+                                        <TableCell className="text-slate-600 font-bold">
+                                            {test.questionCount}
+                                        </TableCell>
                                         <TableCell>
                                             <Badge
                                                 variant="secondary"
-                                                className={test.status === "Active"
-                                                    ? "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/50 shadow-none font-bold tracking-wide uppercase text-[10px] px-2.5 py-1 rounded-full border-none"
-                                                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-none font-bold tracking-wide uppercase text-[10px] px-2.5 py-1 rounded-full border-none"}
+                                                className={`shadow-none font-bold tracking-wide uppercase text-[10px] px-2.5 py-1 rounded-full ${statusBadge(test.status)}`}
                                             >
                                                 {test.status}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="font-bold text-slate-700 text-center">{test.responses}</TableCell>
+                                        <TableCell className="font-bold text-slate-700 text-center">{test.attemptCount}</TableCell>
                                         <TableCell className="text-right pr-6 flex justify-end gap-2">
                                             <Link href={`/teacher/tests/create?edit=${test.id}`}>
                                                 <Button variant="outline" size="sm" className="h-8 shadow-sm rounded-lg hover:text-primary transition-colors">
@@ -107,6 +164,21 @@ export default function MyTestsPage() {
                                                     Analytics
                                                 </Button>
                                             </Link>
+                                            {test.status === 'DRAFT' && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 px-2 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        handleDelete(test.id, test.title);
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
                                         </TableCell>
                                     </TableRow>
                                 )))}
@@ -114,6 +186,15 @@ export default function MyTestsPage() {
                     </Table>
                 </CardContent>
             </Card>
+
+            <DeleteConfirmDialog
+                open={!!deleteTarget}
+                onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+                itemName={deleteTarget?.title || ""}
+                itemType="test"
+                showDisableOption={false}
+                onPermanentDelete={handlePermanentDelete}
+            />
         </div>
     );
 }
