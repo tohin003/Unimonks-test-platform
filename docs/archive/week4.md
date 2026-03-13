@@ -1,3 +1,6 @@
+
+> Archived document. This file preserves an earlier week-by-week implementation plan and is no longer authoritative for the current codebase.
+
 # Week 4 — AI Integration, Analytics, Testing & Deployment Prep
 
 **Duration:** Days 22–28  
