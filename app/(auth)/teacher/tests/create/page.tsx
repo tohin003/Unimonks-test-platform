@@ -88,8 +88,6 @@ function TestBuilderForm() {
     const [isGenerating, setIsGenerating] = useState(false);
 
     // AI Imports
-    const [aiDate, setAiDate] = useState("");
-    const [aiStartTime, setAiStartTime] = useState("");
     const [file, setFile] = useState<File | null>(null);
 
     // Test metadata
@@ -652,17 +650,8 @@ function TestBuilderForm() {
                                 {file.name}
                             </div>
                         )}
-                        <div className="space-y-4 pt-2 border-t border-slate-100">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider">Date</Label>
-                                    <Input type="date" value={aiDate} onChange={e => setAiDate(e.target.value)} className="bg-white border-slate-200 h-11 rounded-xl" />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-slate-600 font-bold text-xs uppercase tracking-wider">Start Time</Label>
-                                    <Input type="time" value={aiStartTime} onChange={e => setAiStartTime(e.target.value)} className="bg-white border-slate-200 h-11 rounded-xl" />
-                                </div>
-                            </div>
+                        <div className="rounded-2xl border border-indigo-100 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm">
+                            Schedule, duration, and batch assignment stay on the main test builder after the questions are imported.
                         </div>
                         <Button onClick={handleAIGenerate} disabled={!file} className="w-full h-12 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-clay-inner">
                             Generate Questions <Wand2 className="w-4 h-4 ml-2" />
