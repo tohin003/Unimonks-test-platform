@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-    SheetTrigger, SheetFooter, SheetClose
+    SheetTrigger, SheetClose
 } from "@/components/ui/sheet";
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { toast } from "sonner";
@@ -96,6 +96,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ batchId
     }, [batchId]);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial data fetch
         fetchBatch();
         // Load teachers for settings
         apiClient.get<{ users: TeacherItem[] }>("/api/admin/users", { role: "TEACHER", limit: 100 })
@@ -105,6 +106,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ batchId
     // Populate edit form when settings opens
     useEffect(() => {
         if (settingsOpen && batch) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- sync form state with batch data
             setEditName(batch.name);
             setEditCode(batch.code);
             setEditTeacher(batch.teacher.id);
@@ -138,6 +140,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ batchId
     // When Add Student sheet opens, fetch page 1
     useEffect(() => {
         if (addStudentOpen && batch) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- sync search/pagination state when sheet opens
             setStudentSearch("");
             setStudentPage(1);
             setSelectedStudents(new Set());

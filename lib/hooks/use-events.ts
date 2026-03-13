@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { apiClient } from '@/lib/api-client'
 
 interface SSEEvent {
     type: string
@@ -9,12 +10,19 @@ interface SSEEvent {
 }
 
 interface UseEventsOptions {
+    /** Enable or disable polling (default: true) */
     enabled?: boolean
+    /** Polling interval in ms (default: 5000) */
+    interval?: number
 }
 
 /**
- * React hook for consuming Server-Sent Events.
- * 
+ * React hook for consuming events via short polling.
+ *
+ * Replaces the previous EventSource (SSE) approach which was incompatible
+ * with Vercel's serverless model. Instead, polls GET /api/events/poll
+ * at a configurable interval.
+ *
  * Usage:
  * ```tsx
  * const { connected, lastEvent } = useEvents((event) => {
@@ -28,70 +36,53 @@ export function useEvents(
     onEvent: (event: SSEEvent) => void,
     options: UseEventsOptions = {}
 ) {
-    const { enabled = true } = options
+    const { enabled = true, interval = 5000 } = options
     const [connected, setConnected] = useState(false)
     const [lastEvent, setLastEvent] = useState<SSEEvent | null>(null)
-    const eventSourceRef = useRef<EventSource | null>(null)
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const reconnectAttemptRef = useRef(0)
+    const intervalRef = useRef<NodeJS.Timeout | null>(null)
     const onEventRef = useRef(onEvent)
 
     // Keep callback ref up-to-date without re-triggering effect
-    onEventRef.current = onEvent
+    useEffect(() => {
+        onEventRef.current = onEvent
+    }, [onEvent])
 
-    const connect = useCallback(() => {
-        if (eventSourceRef.current) {
-            eventSourceRef.current.close()
-        }
-
-        const es = new EventSource('/api/events/stream')
-        eventSourceRef.current = es
-
-        es.onopen = () => {
-            setConnected(true)
-            reconnectAttemptRef.current = 0
-        }
-
-        es.onmessage = (event) => {
-            try {
-                const parsed = JSON.parse(event.data) as SSEEvent
-                setLastEvent(parsed)
-                onEventRef.current(parsed)
-            } catch {
-                // Ignore parse errors (e.g., ping)
+    const poll = useCallback(async () => {
+        try {
+            const res = await apiClient.get<{ events: SSEEvent[] }>('/api/events/poll')
+            if (res.ok && res.data.events.length > 0) {
+                setConnected(true)
+                for (const event of res.data.events) {
+                    setLastEvent(event)
+                    onEventRef.current(event)
+                }
+            } else if (res.ok) {
+                setConnected(true)
             }
-        }
-
-        es.onerror = () => {
+        } catch {
             setConnected(false)
-            es.close()
-
-            // Exponential backoff reconnect
-            const attempt = reconnectAttemptRef.current
-            const delay = Math.min(1000 * Math.pow(2, attempt), 30000) // Max 30s
-            reconnectAttemptRef.current++
-
-            reconnectTimeoutRef.current = setTimeout(() => {
-                if (enabled) connect()
-            }, delay)
         }
-    }, [enabled])
+    }, [])
 
     useEffect(() => {
-        if (!enabled) return
+        if (!enabled) {
+            setConnected(false)
+            return
+        }
 
-        connect()
+        // Initial poll immediately
+        poll()
+
+        // Then poll at interval
+        intervalRef.current = setInterval(poll, interval)
 
         return () => {
-            if (eventSourceRef.current) {
-                eventSourceRef.current.close()
-                eventSourceRef.current = null
-            }
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current)
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current)
+                intervalRef.current = null
             }
         }
-    }, [enabled, connect])
+    }, [enabled, interval, poll])
 
     return { connected, lastEvent }
 }

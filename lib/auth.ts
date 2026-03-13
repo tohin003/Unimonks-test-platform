@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { Role } from '@prisma/client'
 
 const JWT_SECRET = process.env.JWT_SECRET!
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!
+const _JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!
 const ACCESS_TOKEN_EXPIRY = '24h' // 24 hours for OTP-based session
 
 export interface JWTPayload {

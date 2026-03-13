@@ -2,22 +2,28 @@ import Redis from 'ioredis'
 import { prisma } from '@/lib/prisma'
 
 /**
- * Event Service — Redis Pub/Sub for real-time notifications.
- * Used to emit events to specific users or entire batches.
+ * Event Service — Redis List-based event delivery.
+ *
+ * Instead of Pub/Sub (which requires long-lived connections incompatible
+ * with Vercel serverless), events are pushed to per-user Redis lists.
+ *
+ * Producers call `emitToUser()` → LPUSH to `events:{userId}` (TTL 5min)
+ * Consumers call `GET /api/events/poll` → LRANGE + DEL to drain the list
  */
 
-// Create a dedicated publisher connection (separate from the main redis client)
-let publisher: Redis | null = null
+let redisClient: Redis | null = null
 
-function getPublisher(): Redis {
-    if (!publisher) {
-        publisher = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+function getRedis(): Redis {
+    if (!redisClient) {
+        redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
         })
     }
-    return publisher
+    return redisClient
 }
+
+const EVENT_TTL_SECONDS = 300 // 5 minutes
 
 // Event structure
 export interface SSEEvent {
@@ -27,15 +33,50 @@ export interface SSEEvent {
 }
 
 /**
- * Emit an event to a specific user via Redis Pub/Sub.
+ * Emit an event to a specific user via Redis list.
+ * Events are stored in a per-user list with a 5-minute TTL.
+ * The consumer (poll endpoint) drains the list atomically.
  */
 export async function emitToUser(userId: string, event: Omit<SSEEvent, 'timestamp'>) {
-    const pub = getPublisher()
+    const redis = getRedis()
+    const key = `events:${userId}`
     const fullEvent: SSEEvent = {
         ...event,
         timestamp: new Date().toISOString(),
     }
-    await pub.publish(`channel:user:${userId}`, JSON.stringify(fullEvent))
+
+    // LPUSH + EXPIRE in a pipeline for atomicity
+    const pipeline = redis.pipeline()
+    pipeline.lpush(key, JSON.stringify(fullEvent))
+    pipeline.expire(key, EVENT_TTL_SECONDS)
+    await pipeline.exec()
+}
+
+/**
+ * Drain all pending events for a user.
+ * Returns the events and deletes them from Redis atomically.
+ */
+export async function drainEvents(userId: string): Promise<SSEEvent[]> {
+    const redis = getRedis()
+    const key = `events:${userId}`
+
+    // LRANGE to get all, then DEL — use pipeline for speed
+    const pipeline = redis.pipeline()
+    pipeline.lrange(key, 0, -1)
+    pipeline.del(key)
+    const results = await pipeline.exec()
+
+    if (!results || !results[0] || !results[0][1]) {
+        return []
+    }
+
+    const rawEvents = results[0][1] as string[]
+    return rawEvents
+        .map(raw => {
+            try { return JSON.parse(raw) as SSEEvent } catch { return null }
+        })
+        .filter((e): e is SSEEvent => e !== null)
+        .reverse() // LPUSH stores newest first, reverse for chronological order
 }
 
 /**
@@ -49,32 +90,4 @@ export async function emitToBatch(batchId: string, event: Omit<SSEEvent, 'timest
 
     const promises = students.map(s => emitToUser(s.studentId, event))
     await Promise.allSettled(promises)
-}
-
-/**
- * Create a new Redis subscriber for a specific user channel.
- * Returns the subscriber instance for cleanup.
- */
-export function createSubscriber(userId: string, onMessage: (event: SSEEvent) => void) {
-    const subscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-    })
-
-    const channel = `channel:user:${userId}`
-
-    subscriber.subscribe(channel, (err) => {
-        if (err) console.error(`[SSE] Failed to subscribe to ${channel}:`, err)
-    })
-
-    subscriber.on('message', (_channel: string, message: string) => {
-        try {
-            const event = JSON.parse(message) as SSEEvent
-            onMessage(event)
-        } catch (err) {
-            console.error('[SSE] Failed to parse event:', err)
-        }
-    })
-
-    return subscriber
 }

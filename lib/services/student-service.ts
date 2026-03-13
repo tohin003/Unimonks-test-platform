@@ -10,7 +10,10 @@ export async function getDashboard(studentId: string) {
     // Get student's batch IDs
     const enrollments = await prisma.batchStudent.findMany({
         where: { studentId },
-        select: { batchId: true },
+        select: {
+            batchId: true,
+            batch: { select: { name: true, code: true } },
+        },
     })
     const batchIds = enrollments.map((e) => e.batchId)
 
@@ -100,6 +103,11 @@ export async function getDashboard(studentId: string) {
             avgScore: Math.round(avgScore * 100) / 100,
             bestScore: Math.round(bestScore * 100) / 100,
         },
+        batches: enrollments.map((e) => ({
+            id: e.batchId,
+            name: e.batch.name,
+            code: e.batch.code,
+        })),
     }
 }
 

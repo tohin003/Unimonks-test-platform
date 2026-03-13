@@ -129,40 +129,51 @@ export async function saveAnswer(
     questionId: string,
     optionId: string | null
 ) {
-    const session = await prisma.testSession.findUnique({ where: { id: sessionId } })
+    // Use a transaction with row-level lock to prevent lost writes under contention
+    return prisma.$transaction(async (tx) => {
+        // Lock the row for update — prevents concurrent read-modify-write races
+        const locked = await tx.$queryRawUnsafe<Array<{
+            id: string; studentId: string; status: string;
+            serverDeadline: Date; answers: unknown
+        }>>(
+            `SELECT id, "studentId", status, "serverDeadline", answers
+             FROM "TestSession" WHERE id = $1 FOR UPDATE`,
+            sessionId
+        )
 
-    if (!session) return { error: true, code: 'NOT_FOUND', message: 'Session not found' }
-    if (session.studentId !== studentId) return { error: true, code: 'FORBIDDEN', message: 'Access denied' }
-    if (session.status !== 'IN_PROGRESS') return { error: true, code: 'SESSION_ENDED', message: 'Test session has ended' }
+        const session = locked[0]
+        if (!session) return { error: true, code: 'NOT_FOUND', message: 'Session not found' }
+        if (session.studentId !== studentId) return { error: true, code: 'FORBIDDEN', message: 'Access denied' }
+        if (session.status !== 'IN_PROGRESS') return { error: true, code: 'SESSION_ENDED', message: 'Test session has ended' }
 
-    // Check server deadline
-    if (session.serverDeadline.getTime() < Date.now()) {
-        return { error: true, code: 'DEADLINE_PASSED', message: 'Test time has expired' }
-    }
+        // Check server deadline
+        if (new Date(session.serverDeadline).getTime() < Date.now()) {
+            return { error: true, code: 'DEADLINE_PASSED', message: 'Test time has expired' }
+        }
 
-    // Upsert answer in the JSON array
-    const answers = (session.answers as unknown as AnswerEntry[] | null) || []
-    const existingIdx = answers.findIndex(a => a.questionId === questionId)
-    const entry: AnswerEntry = {
-        questionId,
-        optionId,
-        answeredAt: new Date().toISOString(),
-    }
+        // Upsert answer in the JSON array
+        const answers = (session.answers as unknown as AnswerEntry[] | null) || []
+        const existingIdx = answers.findIndex(a => a.questionId === questionId)
+        const entry: AnswerEntry = {
+            questionId,
+            optionId,
+            answeredAt: new Date().toISOString(),
+        }
 
-    if (existingIdx >= 0) {
-        answers[existingIdx] = { ...answers[existingIdx], ...entry }
-    } else {
-        answers.push(entry)
-    }
+        if (existingIdx >= 0) {
+            answers[existingIdx] = { ...answers[existingIdx], ...entry }
+        } else {
+            answers.push(entry)
+        }
 
-    await prisma.testSession.update({
-        where: { id: sessionId },
-        data: { answers: answers as unknown as Prisma.InputJsonValue },
+        await tx.testSession.update({
+            where: { id: sessionId },
+            data: { answers: answers as unknown as Prisma.InputJsonValue },
+        })
+
+        const answeredCount = answers.filter(a => a.optionId !== null).length
+        return { saved: true, answeredCount }
     })
-
-    const answeredCount = answers.filter(a => a.optionId !== null).length
-
-    return { saved: true, answeredCount }
 }
 
 // ── Save Batch Answers (periodic bulk sync from client localStorage) ──

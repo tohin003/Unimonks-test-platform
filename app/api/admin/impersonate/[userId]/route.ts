@@ -30,12 +30,26 @@ async function postHandler(
     }
 
     // Store original admin session in Redis for restoration
-    await redis.set(
+    // Forward key: impersonation:{adminId} → full context
+    // Reverse key: impersonation-reverse:{targetId} → adminId (for O(1) stop lookup)
+    const pipeline = redis.pipeline()
+    pipeline.set(
         `impersonation:${ctx.userId}`,
-        JSON.stringify({ originalUserId: ctx.userId, originalRole: ctx.role }),
+        JSON.stringify({
+            originalUserId: ctx.userId,
+            originalRole: ctx.role,
+            impersonatedUserId: targetUser.id,
+        }),
         'EX',
         86400
     )
+    pipeline.set(
+        `impersonation-reverse:${targetUser.id}`,
+        ctx.userId,
+        'EX',
+        86400
+    )
+    await pipeline.exec()
 
     // Create new session as target user
     const { accessToken, refreshToken } = await createSession(targetUser.id, targetUser.role)

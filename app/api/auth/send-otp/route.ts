@@ -55,11 +55,10 @@ async function sendOTPHandler(req: NextRequest): Promise<NextResponse> {
         console.log(`\n🔐 [DEV] OTP for ${user.email}: ${otp}\n`)
     }
 
-    // ⚡ Fire-and-forget: send email + audit log in background
-    // The user gets an instant response — no waiting for the Resend API
+    // Await email + audit log to guarantee delivery on serverless (Vercel kills bg tasks)
     const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown'
 
-    Promise.allSettled([
+    await Promise.allSettled([
         sendOTPEmail(user.email, otp).catch((err) =>
             console.error('[WARN] Failed to send OTP email:', err)
         ),

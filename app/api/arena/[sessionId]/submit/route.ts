@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withAuth } from '@/lib/middleware/auth-guard'
 import { submitTest } from '@/lib/services/submission-service'
+import { enqueueAIFeedback } from '@/lib/queue/qstash'
 
 // POST /api/arena/[sessionId]/submit — Submit test & get instant grade
 export const POST = withAuth(async (req: NextRequest, { userId, params }) => {
@@ -21,8 +22,13 @@ export const POST = withAuth(async (req: NextRequest, { userId, params }) => {
         return NextResponse.json(result, { status: statusMap[result.code as string] || 400 })
     }
 
-    // TODO: Enqueue AI feedback job via BullMQ (Phase 3)
-    // await aiFeedbackQueue.add('generate-feedback', { sessionId })
+    // Enqueue AI feedback generation (non-blocking, async via QStash)
+    try {
+        await enqueueAIFeedback(sessionId)
+    } catch (err) {
+        console.warn('[SUBMIT] Could not enqueue AI feedback:', err)
+    }
 
     return NextResponse.json(result)
 }, ['STUDENT'])
+

@@ -1,3 +1,4 @@
+import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -19,4 +20,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+    org: "unimonk",
+    project: "unimonk-test-platform",
+
+    // Only print logs for uploading source maps in CI
+    silent: !process.env.CI,
+
+    // Routes browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers (increases server load)
+    tunnelRoute: "/monitoring",
+});

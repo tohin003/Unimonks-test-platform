@@ -43,7 +43,6 @@ type UsersResponse = {
 
 export default function UserManagementPage() {
     const [isLoading, setIsLoading] = useState(true);
-    const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [total, setTotal] = useState(0);
@@ -72,6 +71,7 @@ export default function UserManagementPage() {
     }, []);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial data fetch
         fetchUsers();
     }, [fetchUsers]);
 

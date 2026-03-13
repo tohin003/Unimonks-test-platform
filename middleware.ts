@@ -6,7 +6,10 @@ interface JWTPayload extends JosePayload {
     role: 'ADMIN' | 'TEACHER' | 'STUDENT'
 }
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'fallback_secret')
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!)
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is required')
+}
 const ALLOWED_ORIGIN = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 const MAX_JSON_BODY = 100 * 1024 // 100KB
 
@@ -54,8 +57,8 @@ export async function middleware(req: NextRequest) {
         }
     }
 
-    // Allow auth API routes publicly
-    if (pathname.startsWith('/api/auth/')) {
+    // Allow auth API routes and webhook routes publicly (QStash has its own auth)
+    if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/webhooks/')) {
         return NextResponse.next()
     }
 
@@ -125,5 +128,6 @@ export const config = {
         '/api/teacher/:path*',
         '/api/student/:path*',
         '/api/arena/:path*',
+        '/api/webhooks/:path*',
     ],
 }

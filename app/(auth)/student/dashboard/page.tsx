@@ -22,23 +22,33 @@ type UpcomingTest = {
 
 type RecentResult = {
     testTitle: string;
-    score: number;
-    totalQuestions: number;
-    correctAnswers: number;
-    completedAt: string;
+    testId: string;
+    score: number | null;
+    totalMarks: number;
+    percentage: number | null;
+    submittedAt: string | null;
     sessionId: string;
+    hasFeedback: boolean;
+    overallTag: string | null;
 };
 
 type DashboardStats = {
-    testsAttempted: number;
+    totalTests: number;
     avgScore: number;
     bestScore: number;
+};
+
+type BatchInfo = {
+    id: string;
+    name: string;
+    code: string;
 };
 
 type DashboardData = {
     upcoming: UpcomingTest[];
     recent: RecentResult[];
     stats: DashboardStats;
+    batches: BatchInfo[];
 };
 
 function DashboardSkeleton() {
@@ -79,6 +89,15 @@ export default function StudentDashboard() {
                 <div>
                     <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-tight">Student Dashboard</h1>
                     <p className="text-slate-500 mt-1">Track your progress and upcoming assessments.</p>
+                    {data.batches.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            {data.batches.map((b) => (
+                                <span key={b.id} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded-lg border border-indigo-100">
+                                    {b.name} <span className="text-indigo-400 font-normal">({b.code})</span>
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -120,7 +139,7 @@ export default function StudentDashboard() {
             {/* Stats Row */}
             <div className="grid grid-cols-3 gap-4">
                 {[
-                    { label: "Tests Taken", value: data.stats.testsAttempted },
+                    { label: "Tests Taken", value: data.stats.totalTests },
                     { label: "Avg Score", value: `${data.stats.avgScore}%` },
                     { label: "Best Score", value: `${data.stats.bestScore}%` },
                 ].map(s => (
@@ -144,20 +163,23 @@ export default function StudentDashboard() {
                         {data.recent.length === 0 ? (
                             <div className="text-center text-slate-400 py-8">No results yet. Take a test!</div>
                         ) : (
-                            data.recent.map((r, i) => (
-                                <div key={i} className="flex flex-col gap-3">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 text-base font-serif">{r.testTitle}</h4>
-                                            <p className="text-sm text-slate-500 mt-1">Score: {r.score}% ({r.correctAnswers}/{r.totalQuestions})</p>
+                            data.recent.map((r, i) => {
+                                const pct = r.percentage ?? 0;
+                                return (
+                                    <div key={i} className="flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="font-bold text-slate-800 text-base font-serif">{r.testTitle}</h4>
+                                                <p className="text-sm text-slate-500 mt-1">Score: {Math.round(pct)}% ({r.score ?? 0}/{r.totalMarks})</p>
+                                            </div>
+                                            <Link href={`/student/results/${r.sessionId}`}>
+                                                <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md cursor-pointer hover:bg-emerald-100">View</span>
+                                            </Link>
                                         </div>
-                                        <Link href={`/student/results/${r.sessionId}`}>
-                                            <span className="bg-emerald-50 text-emerald-700 font-bold uppercase text-[10px] tracking-wider px-3 py-1 rounded-md cursor-pointer hover:bg-emerald-100">View</span>
-                                        </Link>
+                                        <Progress value={pct} className="h-3 rounded-full bg-surface-2" indicatorClassName={`${pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'} rounded-full`} />
                                     </div>
-                                    <Progress value={r.score} className="h-3 rounded-full bg-surface-2" indicatorClassName={`${r.score >= 80 ? 'bg-emerald-500' : r.score >= 60 ? 'bg-amber-500' : 'bg-rose-500'} rounded-full`} />
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </CardContent>
                 </Card>
@@ -172,15 +194,15 @@ export default function StudentDashboard() {
                     </CardHeader>
                     <CardContent className="p-6">
                         <div className="flex flex-col gap-2">
-                            {data.stats.testsAttempted > 0 ? (
+                            {data.stats.totalTests > 0 ? (
                                 <>
                                     <h4 className="font-bold text-indigo-900 text-sm font-serif">
                                         {data.stats.avgScore >= 80 ? "Great Performance!" : "Focus Areas Identified"}
                                     </h4>
                                     <p className="text-sm text-indigo-800/80 leading-relaxed">
                                         {data.stats.avgScore >= 80
-                                            ? `You're averaging ${data.stats.avgScore}% across ${data.stats.testsAttempted} tests. Keep up the excellent work!`
-                                            : `Your average across ${data.stats.testsAttempted} tests is ${data.stats.avgScore}%. Review topics from recent tests where you scored below 70%.`
+                                            ? `You're averaging ${data.stats.avgScore}% across ${data.stats.totalTests} tests. Keep up the excellent work!`
+                                            : `Your average across ${data.stats.totalTests} tests is ${data.stats.avgScore}%. Review topics from recent tests where you scored below 70%.`
                                         }
                                     </p>
                                 </>

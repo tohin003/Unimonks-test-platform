@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional hydration from localStorage
                 setUserState(JSON.parse(stored));
             }
         } catch {

@@ -50,6 +50,7 @@ export default function AdminTestsPage() {
         setIsLoading(false);
     }, []);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial data fetch
     useEffect(() => { fetchTests(); }, [fetchTests]);
 
     const handleSearchChange = (value: string) => {

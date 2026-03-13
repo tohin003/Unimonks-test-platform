@@ -98,7 +98,7 @@ export default function TeacherDashboard() {
 
     const draftCount = dashboardData?.testStats.drafts || tests.filter(t => t.status === "DRAFT").length;
     const publishedCount = dashboardData?.testStats.published || tests.filter(t => t.status === "PUBLISHED").length;
-    const totalAttempts = dashboardData?.testStats.totalAttempts || tests.reduce((sum, t) => sum + t.attemptCount, 0);
+    const _totalAttempts = dashboardData?.testStats.totalAttempts || tests.reduce((sum, t) => sum + t.attemptCount, 0);
 
     return (
         <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto pb-10">

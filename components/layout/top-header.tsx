@@ -13,7 +13,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import {
     Breadcrumb,
@@ -35,7 +35,6 @@ const NO_PAGE_SEGMENTS = new Set(["admin", "teacher", "student"]);
 
 export function TopHeader() {
     const pathname = usePathname();
-    const router = useRouter();
     const { user, logout } = useAuth();
     const { theme, setTheme } = useTheme();
 

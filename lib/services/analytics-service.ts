@@ -31,11 +31,15 @@ export async function getAdminOverview() {
         }),
     ])
 
-    // Active sessions from Redis (if any sessions are tracked)
+    // Active sessions from Redis (use SCAN instead of KEYS for production safety)
     let activeSessions = 0
     try {
-        const keys = await redis.keys('session:*')
-        activeSessions = keys.length
+        let cursor = '0'
+        do {
+            const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'session:*', 'COUNT', 100)
+            cursor = nextCursor
+            activeSessions += keys.length
+        } while (cursor !== '0')
     } catch {
         // Redis might not have session tracking keys
     }
@@ -118,11 +122,24 @@ export async function getTestAnalytics(testId: string) {
         opts.forEach((o) => { optionCounts[o.id] = 0 })
 
         sessions.forEach((s) => {
-            const answers = s.answers as Record<string, string> | null
-            if (answers && answers[q.id]) {
+            // Answers can be in array format [{questionId, optionId}] or legacy object format {questionId: optionId}
+            const rawAnswers = s.answers as unknown
+            let selectedOptionId: string | null = null
+
+            if (Array.isArray(rawAnswers)) {
+                // Current format: [{questionId, optionId, answeredAt}]
+                const entry = (rawAnswers as Array<{ questionId: string; optionId: string | null }>)
+                    .find(a => a.questionId === q.id)
+                selectedOptionId = entry?.optionId ?? null
+            } else if (rawAnswers && typeof rawAnswers === 'object') {
+                // Legacy format: {questionId: optionId}
+                selectedOptionId = (rawAnswers as Record<string, string>)[q.id] ?? null
+            }
+
+            if (selectedOptionId) {
                 total++
-                if (correctOpt && answers[q.id] === correctOpt.id) correct++
-                optionCounts[answers[q.id]] = (optionCounts[answers[q.id]] || 0) + 1
+                if (correctOpt && selectedOptionId === correctOpt.id) correct++
+                optionCounts[selectedOptionId] = (optionCounts[selectedOptionId] || 0) + 1
             }
         })
 

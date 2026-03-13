@@ -14,26 +14,37 @@ function refreshKey(token: string) {
     return `refresh:${token}`
 }
 
-// Create a new session: generate tokens, store refresh in Redis
+function userSessionsKey(userId: string) {
+    return `user:sessions:${userId}`
+}
+
+/**
+ * Create a new session: generate tokens, store refresh in Redis.
+ * Also tracks the token in a per-user set for efficient logout.
+ */
 export async function createSession(userId: string, role: Role) {
     const accessToken = generateAccessToken(userId, role)
     const refreshToken = generateRefreshToken()
 
-    // Store mapping refresh:token → userId
-    await redis.set(refreshKey(refreshToken), userId, 'EX', SESSION_TTL)
+    // Store mapping refresh:token → userId + track in user's session set
+    const pipeline = redis.pipeline()
+    pipeline.set(refreshKey(refreshToken), userId, 'EX', SESSION_TTL)
+    pipeline.sadd(userSessionsKey(userId), refreshToken)
+    pipeline.expire(userSessionsKey(userId), SESSION_TTL)
+    await pipeline.exec()
 
     return { accessToken, refreshToken }
 }
 
-// Rotate refresh token:  old → delete,  new pair → return
+/**
+ * Rotate refresh token: old → delete, new pair → return.
+ * Updates the per-user session set atomically.
+ */
 export async function refreshSession(
     oldRefreshToken: string
 ): Promise<{ accessToken: string; refreshToken: string; userId: string } | null> {
     const userId = await redis.get(refreshKey(oldRefreshToken))
     if (!userId) return null
-
-    // Delete old token (one-time use)
-    await redis.del(refreshKey(oldRefreshToken))
 
     // We need the role — re-derive from a short lookup (stored alongside userId)
     const roleKey = `role:${userId}`
@@ -42,7 +53,15 @@ export async function refreshSession(
 
     const accessToken = generateAccessToken(userId, role)
     const refreshToken = generateRefreshToken()
-    await redis.set(refreshKey(refreshToken), userId, 'EX', SESSION_TTL)
+
+    // Atomic: delete old, create new, update session set
+    const pipeline = redis.pipeline()
+    pipeline.del(refreshKey(oldRefreshToken))
+    pipeline.set(refreshKey(refreshToken), userId, 'EX', SESSION_TTL)
+    pipeline.srem(userSessionsKey(userId), oldRefreshToken)
+    pipeline.sadd(userSessionsKey(userId), refreshToken)
+    pipeline.expire(userSessionsKey(userId), SESSION_TTL)
+    await pipeline.exec()
 
     return { accessToken, refreshToken, userId }
 }
@@ -52,20 +71,22 @@ export async function storeUserRole(userId: string, role: Role) {
     await redis.set(`role:${userId}`, role, 'EX', SESSION_TTL)
 }
 
-// Remove all refresh tokens for a user (used on logout)
+/**
+ * Remove all refresh tokens for a user (used on logout).
+ * Uses the per-user session set for O(1) lookup — no SCAN needed.
+ */
 export async function destroySession(userId: string) {
-    // Scan all refresh:* keys and delete those whose value matches userId
-    let cursor = '0'
-    do {
-        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'refresh:*', 'COUNT', 100)
-        cursor = nextCursor
-        for (const key of keys) {
-            const val = await redis.get(key)
-            if (val === userId) {
-                await redis.del(key)
-            }
+    const sessionSetKey = userSessionsKey(userId)
+    const tokens = await redis.smembers(sessionSetKey)
+
+    if (tokens.length > 0) {
+        const pipeline = redis.pipeline()
+        for (const token of tokens) {
+            pipeline.del(refreshKey(token))
         }
-    } while (cursor !== '0')
+        pipeline.del(sessionSetKey)
+        await pipeline.exec()
+    }
 }
 
 export const destroyAllSessions = destroySession

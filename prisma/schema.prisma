@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
@@ -89,6 +90,7 @@ model BatchStudent {
   student     User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@id([batchId, studentId])
+  @@index([studentId]) // Student-centric lookups ("my batches")
 }
 
 model Test {
@@ -121,6 +123,8 @@ model Question {
   topic       String?    
 
   test        Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  @@index([testId, order]) // Ordered question fetches
 }
 
 model TestAssignment {
@@ -135,6 +139,7 @@ model TestAssignment {
   student     User?     @relation("StudentAssignments", fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([testId, batchId])
+  @@index([studentId]) // Student assignment lookups
 }
 
 model TestSession {
@@ -156,6 +161,7 @@ model TestSession {
   aiFeedback      AIFeedback?
 
   @@index([testId, studentId])
+  @@index([studentId, status]) // Student dashboard queries
 }
 
 model AIFeedback {

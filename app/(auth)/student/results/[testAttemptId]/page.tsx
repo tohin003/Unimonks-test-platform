@@ -134,6 +134,7 @@ function FeedbackLoadingCard({ sessionId, onFeedbackReady }: { sessionId: string
 
     // Auto-start on mount
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional polling start
         startPolling();
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);

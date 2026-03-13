@@ -53,6 +53,7 @@ export default function MyTestsPage() {
         setIsLoading(false);
     };
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial data fetch
     useEffect(() => { fetchTests(); }, []);
 
     const handleDelete = (id: string, title: string) => {

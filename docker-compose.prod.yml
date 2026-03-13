@@ -47,26 +47,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      NODE_ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ── BullMQ Workers (separate process) ──
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: ["node", "-e", "require('./lib/queue/workers')"]
-    environment:
-      DATABASE_URL: "postgresql://unimonk:${POSTGRES_PASSWORD:-changeme}@postgres:5432/unimonk_prod"
-      REDIS_URL: "redis://redis:6379"
-      JWT_SECRET: ${JWT_SECRET}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      QSTASH_TOKEN: ${QSTASH_TOKEN:-}
+      QSTASH_CURRENT_SIGNING_KEY: ${QSTASH_CURRENT_SIGNING_KEY:-}
+      QSTASH_NEXT_SIGNING_KEY: ${QSTASH_NEXT_SIGNING_KEY:-}
       NODE_ENV: production
     depends_on:
       postgres:

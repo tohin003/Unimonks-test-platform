@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import {
     Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-    SheetTrigger, SheetFooter, SheetClose
+    SheetTrigger, SheetClose
 } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,6 +66,7 @@ export default function AdminBatchesPage() {
     }, []);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial data fetch on mount
         fetchBatches();
         // Load teachers for create form
         apiClient.get<{ users: TeacherOption[] }>("/api/admin/users", { role: "TEACHER", limit: 100 })

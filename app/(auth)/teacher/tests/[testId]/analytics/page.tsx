@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
-import { ArrowLeft, Download, Users, CheckCircle, Clock, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Users, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -98,7 +98,6 @@ export default function TestAnalyticsPage() {
         );
     }
 
-    const maxCount = Math.max(...scoreDistribution.map(d => d.count), 1);
 
     return (
         <div className="flex flex-col gap-6 w-full max-w-6xl mx-auto pb-10">

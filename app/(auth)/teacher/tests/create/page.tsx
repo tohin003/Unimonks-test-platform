@@ -10,8 +10,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { UploadCloud, Wand2, Clock, Plus, Trash2, Save, Send, AlertTriangle, BookOpen, Lock, ArrowLeft, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { UploadCloud, Wand2, Clock, Plus, Trash2, Save, Send, Lock, Loader2 } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,8 +88,6 @@ function TestBuilderForm() {
     const [isGenerating, setIsGenerating] = useState(false);
 
     // AI Imports
-    const [aiBatch, setAiBatch] = useState("unassigned");
-    const [aiDuration, setAiDuration] = useState("60");
     const [aiDate, setAiDate] = useState("");
     const [aiStartTime, setAiStartTime] = useState("");
     const [file, setFile] = useState<File | null>(null);
@@ -290,9 +288,10 @@ function TestBuilderForm() {
             }
             setIsSaving(false);
             return currentTestId;
-        } catch (err: any) {
-            console.error("Save Test Error:", err.message);
-            toast.error("Save Error", { description: err.message || "Something went wrong while saving" });
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Something went wrong while saving';
+            console.error("Save Test Error:", message);
+            toast.error("Save Error", { description: message });
             setIsSaving(false);
             return null;
         }

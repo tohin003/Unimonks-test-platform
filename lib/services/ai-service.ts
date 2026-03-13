@@ -330,7 +330,7 @@ export async function generateQuestionsFromText(
     const chunks = chunkText(text)
     const questionsPerChunk = Math.ceil(count / chunks.length)
     let allQuestions: GeneratedQuestion[] = []
-    let totalCost: CostInfo = { model: 'gpt-4o-mini', inputTokens: 0, outputTokens: 0, costUSD: 0 }
+    const totalCost: CostInfo = { model: 'gpt-4o-mini', inputTokens: 0, outputTokens: 0, costUSD: 0 }
     let failedCount = 0
 
     for (const chunk of chunks) {
