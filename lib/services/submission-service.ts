@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { MAX_PAID_TOTAL_ATTEMPTS } from '@/lib/config/platform-policy'
 import { enqueueForceSubmit } from '@/lib/queue/qstash'
+import { calculateQuestionAttemptSummary, calculateTotalMarks } from '@/lib/utils/test-settings'
 
 /**
  * Submission Service — Core arena engine.
@@ -130,7 +131,7 @@ export async function startTestSession(studentId: string, testId: string) {
                 serverDeadline: deadline,
                 answers: [] as unknown as Prisma.InputJsonValue,
                 tabSwitchCount: 0,
-                totalMarks: test.questions.length,
+                totalMarks: calculateTotalMarks(test.questions.length, test.settings),
             },
         })
 
@@ -334,30 +335,11 @@ export async function submitTest(
             incomingAnswers || []
         )
 
-        let score = 0
-
-        for (const answer of answers) {
-            if (!answer.optionId) continue
-            const question = test.questions.find(q => q.id === answer.questionId)
-            if (!question) continue
-
-            const opts = question.options as unknown
-            let correctOptionId: string | null = null
-
-            if (Array.isArray(opts)) {
-                const correctOpt = (opts as Array<{ id: string; isCorrect: boolean }>).find(o => o.isCorrect)
-                correctOptionId = correctOpt?.id || null
-            } else if (typeof opts === 'object' && opts !== null) {
-                correctOptionId = (opts as Record<string, string>).correct || null
-            }
-
-            if (correctOptionId && answer.optionId === correctOptionId) {
-                score++
-            }
-        }
-
-        const totalMarks = test.questions.length
-        const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 10000) / 100 : 0
+        const {
+            score,
+            totalMarks,
+            percentage,
+        } = calculateQuestionAttemptSummary(test.questions, answers, test.settings)
         const timeTakenMs = Date.now() - new Date(session.startedAt).getTime()
         const timeTakenSeconds = Math.floor(timeTakenMs / 1000)
 

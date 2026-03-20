@@ -533,7 +533,15 @@ function AdminTestBuilderForm() {
                 return;
             }
 
-            const { test, questionsGenerated, failedCount, strategy, generationTarget } = data;
+            const { test, questionsGenerated, failedCount, strategy, generationTarget, importDiagnostics } = data;
+
+            if (importDiagnostics?.aiFallbackUsed) {
+                toast.warning("AI took the lead", {
+                    description:
+                        importDiagnostics.warning ||
+                        "The parser path struggled with this document, so AI fallback handled the extraction. Please inform engineering so the parser can be improved.",
+                });
+            }
 
             if (failedCount > 0) {
                 toast.warning("Generated with warnings", {
@@ -542,6 +550,10 @@ function AdminTestBuilderForm() {
             } else if (strategy === "EXTRACTED") {
                 toast.success("Question paper imported", {
                     description: `${questionsGenerated} question(s) extracted directly from the document.`,
+                });
+            } else if (strategy === "AI_VISION_FALLBACK") {
+                toast.success("AI fallback import complete", {
+                    description: `${questionsGenerated} question(s) prepared after the AI fallback took over from the parser path.`,
                 });
             } else {
                 toast.success("AI generation complete", {

@@ -24,6 +24,8 @@ test('CreateTestSchema accepts the admin draft payload and applies default setti
             shuffleQuestions: false,
             showResult: true,
             passingScore: 40,
+            correctMarks: 5,
+            incorrectMarks: 1,
         },
     })
 })

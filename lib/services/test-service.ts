@@ -6,8 +6,10 @@ import { redis } from '@/lib/redis'
 import {
     extractQuestionsFromDocumentText,
     generateQuestionsFromText,
+    generateQuestionsFromPdfVisionFallback,
     parseDocumentToText,
 } from '@/lib/services/ai-service'
+import { resolveTestSettings } from '@/lib/utils/test-settings'
 import type {
     AssignTestInput,
     CreateQuestionInput,
@@ -75,6 +77,13 @@ type AdminDocumentGenerationInput = {
     title?: string | null
     requestedCount?: number | null
     ipAddress?: string | null
+}
+
+type DocumentImportDiagnostics = {
+    parserStatus: 'OK' | 'FAILED' | 'WEAK_OUTPUT'
+    aiFallbackUsed: boolean
+    reportParserIssue: boolean
+    warning: string | null
 }
 
 function serviceError(
@@ -195,10 +204,10 @@ function mergeSettings(
         ? nextSettings as Record<string, unknown>
         : {}
 
-    return {
+    return resolveTestSettings({
         ...currentValue,
         ...nextValue,
-    } as Prisma.InputJsonObject
+    }) as Prisma.InputJsonObject
 }
 
 function buildSearchWhere(query: TestQueryInput): Prisma.TestWhereInput {
@@ -503,7 +512,7 @@ export async function createAdminTest(adminId: string, data: CreateTestInput) {
             title: data.title,
             description: data.description,
             durationMinutes: data.durationMinutes,
-            settings: (data.settings ?? {}) as Prisma.InputJsonValue,
+            settings: resolveTestSettings(data.settings) as Prisma.InputJsonValue,
             status: 'DRAFT',
             source: 'MANUAL',
         },
@@ -955,36 +964,135 @@ export async function generateAdminTestFromDocument(input: AdminDocumentGenerati
         return uploadValidation
     }
 
-    let text: string
+    const buffer = Buffer.from(await input.file.arrayBuffer())
+    let text = ''
+    let parseError: unknown = null
+    let importDiagnostics: DocumentImportDiagnostics = {
+        parserStatus: 'OK',
+        aiFallbackUsed: false,
+        reportParserIssue: false,
+        warning: null,
+    }
+
     try {
-        const buffer = Buffer.from(await input.file.arrayBuffer())
         text = await parseDocumentToText(buffer, uploadValidation.sanitizedFileName)
     } catch (error) {
+        parseError = error
         console.error('[AI-DOC][ADMIN] Failed to parse uploaded document:', error)
-        return serviceError(
-            'PARSE_ERROR',
-            'Failed to parse document. Ensure it is a valid .docx or text-based .pdf file.',
-        )
     }
 
-    if (text.length < 50) {
-        return serviceError(
-            'BAD_REQUEST',
-            'Document has too little text to generate questions from.',
-        )
+    let extracted = {
+        detectedAsMcqDocument: false,
+        answerHintCount: 0,
+        candidateBlockCount: 0,
+        questions: [] as Awaited<ReturnType<typeof extractQuestionsFromDocumentText>>['questions'],
+    }
+    if (text.length >= 50) {
+        extracted = extractQuestionsFromDocumentText(text)
     }
 
-    const extracted = extractQuestionsFromDocumentText(text)
-    const strategy = extracted.detectedAsMcqDocument ? 'EXTRACTED' : 'AI_GENERATED'
-    const result = extracted.detectedAsMcqDocument
-        ? {
-            error: false,
-            message: undefined,
-            questions: extracted.questions,
-            failedCount: Math.max(0, extracted.candidateBlockCount - extracted.questions.length),
-            cost: undefined,
+    const isPdfUpload = uploadValidation.sanitizedFileName.toLowerCase().endsWith('.pdf')
+    const parserProducedWeakPdfOutput =
+        isPdfUpload
+        && !parseError
+        && (
+            text.length < 50
+            || (
+                extracted.candidateBlockCount >= 5
+                && extracted.questions.length < Math.max(3, Math.floor(extracted.candidateBlockCount * 0.35))
+            )
+        )
+
+    let strategy: 'EXTRACTED' | 'AI_GENERATED' | 'AI_VISION_FALLBACK'
+    let result:
+        | {
+            error: false
+            message: undefined
+            questions: typeof extracted.questions
+            failedCount: number
+            cost: undefined
         }
-        : await generateQuestionsFromText(text, uploadValidation.generationTarget, admin.id)
+        | Awaited<ReturnType<typeof generateQuestionsFromText>>
+        | Awaited<ReturnType<typeof generateQuestionsFromPdfVisionFallback>>
+
+    if (parseError || parserProducedWeakPdfOutput) {
+        if (!isPdfUpload) {
+            return serviceError(
+                'PARSE_ERROR',
+                'Failed to parse document. Ensure it is a valid .docx or text-based .pdf file.',
+            )
+        }
+
+        const fallback = await generateQuestionsFromPdfVisionFallback(
+            buffer,
+            uploadValidation.generationTarget,
+            admin.id,
+        )
+
+        if (fallback.error || !fallback.questions || fallback.questions.length === 0) {
+            return serviceError(
+                parseError ? 'PARSE_ERROR' : 'GENERATION_FAILED',
+                fallback.message || (
+                    parseError
+                        ? 'Failed to parse the PDF and AI fallback could not recover the document.'
+                        : 'The PDF parser produced weak output and AI fallback could not recover the document.'
+                ),
+            )
+        }
+
+        importDiagnostics = {
+            parserStatus: parseError ? 'FAILED' : 'WEAK_OUTPUT',
+            aiFallbackUsed: true,
+            reportParserIssue: true,
+            warning: parseError
+                ? 'AI took the lead because the PDF parser failed on this file. Please inform engineering so the parser can be improved for this document type.'
+                : 'AI took the lead because the PDF parser produced weak structured output on this file. Please inform engineering so the parser can be improved for this document type.',
+        }
+
+        strategy = 'AI_VISION_FALLBACK'
+        result = fallback
+    } else {
+        if (text.length < 50) {
+            return serviceError(
+                'BAD_REQUEST',
+                'Document has too little text to generate questions from.',
+            )
+        }
+
+        strategy = extracted.detectedAsMcqDocument ? 'EXTRACTED' : 'AI_GENERATED'
+        result = extracted.detectedAsMcqDocument
+            ? {
+                error: false,
+                message: undefined,
+                questions: extracted.questions,
+                failedCount: Math.max(0, extracted.candidateBlockCount - extracted.questions.length),
+                cost: undefined,
+            }
+            : await generateQuestionsFromText(text, uploadValidation.generationTarget, admin.id)
+
+        if (
+            isPdfUpload
+            && strategy === 'AI_GENERATED'
+            && (result.error || !result.questions || result.questions.length === 0)
+        ) {
+            const fallback = await generateQuestionsFromPdfVisionFallback(
+                buffer,
+                uploadValidation.generationTarget,
+                admin.id,
+            )
+
+            if (!fallback.error && fallback.questions && fallback.questions.length > 0) {
+                importDiagnostics = {
+                    parserStatus: 'WEAK_OUTPUT',
+                    aiFallbackUsed: true,
+                    reportParserIssue: true,
+                    warning: 'AI took the lead because the PDF parser path could not recover enough usable content from this file. Please inform engineering so the parser can be improved for this document type.',
+                }
+                strategy = 'AI_VISION_FALLBACK'
+                result = fallback
+            }
+        }
+    }
 
     if (result.error || !result.questions || result.questions.length === 0) {
         return serviceError(
@@ -1002,6 +1110,7 @@ export async function generateAdminTestFromDocument(input: AdminDocumentGenerati
             title: testTitle,
             description: `Auto-generated from document: ${uploadValidation.sanitizedFileName}`,
             durationMinutes: Math.max(15, result.questions.length * 2),
+            settings: resolveTestSettings(undefined) as Prisma.InputJsonValue,
             status: 'DRAFT',
             source: 'AI_GENERATED',
             questions: {
@@ -1030,6 +1139,11 @@ export async function generateAdminTestFromDocument(input: AdminDocumentGenerati
                 fileName: uploadValidation.sanitizedFileName,
                 fileSize: input.file.size,
                 strategy,
+                parserStatus: importDiagnostics.parserStatus,
+                aiFallbackUsed: importDiagnostics.aiFallbackUsed,
+                parserWarning: importDiagnostics.warning,
+                fallbackPageCount: 'pageCount' in result ? result.pageCount : null,
+                fallbackChunkCount: 'chunkCount' in result ? result.chunkCount : null,
                 extractedQuestionCandidates: extracted.candidateBlockCount,
                 extractedQuestions: extracted.questions.length,
                 questionsGenerated: result.questions.length,
@@ -1049,5 +1163,6 @@ export async function generateAdminTestFromDocument(input: AdminDocumentGenerati
         questionsGenerated: result.questions.length,
         failedCount: result.failedCount || 0,
         cost: result.cost,
+        importDiagnostics,
     }
 }

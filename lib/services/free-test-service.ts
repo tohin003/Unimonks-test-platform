@@ -6,6 +6,12 @@ import {
     STANDARD_BATCH_KIND,
 } from '@/lib/config/platform-policy'
 import { prisma } from '@/lib/prisma'
+import {
+    calculateQuestionAttemptSummary,
+    calculateTotalMarks,
+    getCorrectOptionId,
+    resolveTestSettings,
+} from '@/lib/utils/test-settings'
 
 const COMPLETED_SESSION_STATUSES: SessionStatus[] = ['SUBMITTED', 'TIMED_OUT', 'FORCE_SUBMITTED']
 const SUBMISSION_GRACE_PERIOD_MS = 30 * 1000
@@ -210,22 +216,11 @@ function buildPublicPremiumTestWhere(): Prisma.TestWhereInput {
 }
 
 function readPassingScore(settings: unknown) {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-        return 40
-    }
-
-    const rawPassingScore = (settings as Record<string, unknown>).passingScore
-    return typeof rawPassingScore === 'number' && Number.isFinite(rawPassingScore)
-        ? rawPassingScore
-        : 40
+    return resolveTestSettings(settings).passingScore
 }
 
 function shouldShuffleQuestions(settings: unknown) {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-        return false
-    }
-
-    return (settings as Record<string, unknown>).shuffleQuestions === true
+    return resolveTestSettings(settings).shuffleQuestions
 }
 
 function createSeededRandom(seed: string) {
@@ -276,23 +271,6 @@ function toSafeOptions(rawOptions: unknown): SafeQuestionOption[] {
     }
 
     return []
-}
-
-function extractCorrectOptionId(rawOptions: unknown) {
-    if (Array.isArray(rawOptions)) {
-        const correctOption = (rawOptions as Array<{ id: string; isCorrect?: boolean }>).find(
-            (option) => option.isCorrect,
-        )
-
-        return correctOption?.id ?? null
-    }
-
-    if (rawOptions && typeof rawOptions === 'object') {
-        const optionMap = rawOptions as Record<string, string>
-        return typeof optionMap.correct === 'string' ? optionMap.correct : null
-    }
-
-    return null
 }
 
 function stripCorrectAnswers(
@@ -481,7 +459,7 @@ function toResultPayload(session: {
 
     const questionReview = orderedQuestions.map((question) => {
         const selectedOptionId = answers[question.id]?.optionId ?? null
-        const correctOptionId = extractCorrectOptionId(question.options)
+        const correctOptionId = getCorrectOptionId(question.options)
 
         return {
             id: question.id,
@@ -764,7 +742,7 @@ export async function startPublicFreeTestSession(
                 startedAt: now,
                 serverDeadline,
                 answers: [] as Prisma.InputJsonValue,
-                totalMarks: test.questions.length,
+                totalMarks: calculateTotalMarks(test.questions.length, test.settings),
             },
         })
 
@@ -1060,27 +1038,11 @@ async function submitLeadSessionWithTransaction(
         incomingAnswers ?? [],
     )
 
-    let score = 0
-
-    for (const answer of answers) {
-        if (!answer.optionId) {
-            continue
-        }
-
-        const matchingQuestion = test.questions.find((question) => question.id === answer.questionId)
-        if (!matchingQuestion) {
-            continue
-        }
-
-        if (extractCorrectOptionId(matchingQuestion.options) === answer.optionId) {
-            score += 1
-        }
-    }
-
-    const totalMarks = test.questions.length
-    const percentage = totalMarks > 0
-        ? Math.round((score / totalMarks) * 10000) / 100
-        : 0
+    const {
+        score,
+        totalMarks,
+        percentage,
+    } = calculateQuestionAttemptSummary(test.questions, answers, test.settings)
     const submittedAt = new Date()
     const nextStatus: SessionStatus = force
         ? (new Date(session.serverDeadline).getTime() < Date.now() ? 'TIMED_OUT' : 'FORCE_SUBMITTED')

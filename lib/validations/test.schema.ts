@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { DEFAULT_TEST_SETTINGS } from '@/lib/config/platform-policy'
+
 const nonEmptyUuidArray = z.array(z.string().uuid('Each ID must be a valid UUID'))
     .max(200, 'Cannot submit more than 200 IDs at once')
 
@@ -8,6 +10,8 @@ const TestSettingsSchema = z.object({
     shuffleQuestions: z.boolean().default(false),
     showResult: z.boolean().default(true),
     passingScore: z.number().min(0).max(100).default(40),
+    correctMarks: z.number().int().min(1).max(20).default(DEFAULT_TEST_SETTINGS.correctMarks),
+    incorrectMarks: z.number().int().min(0).max(20).default(DEFAULT_TEST_SETTINGS.incorrectMarks),
 })
 
 // ── Create Test ──
@@ -15,7 +19,7 @@ export const CreateTestSchema = z.object({
     title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200, 'Title must be at most 200 characters'),
     description: z.string().trim().max(2000).optional(),
     durationMinutes: z.number().int().min(5, 'Duration must be at least 5 minutes').max(300, 'Duration must be at most 300 minutes'),
-    settings: TestSettingsSchema.optional().default({ shuffleQuestions: false, showResult: true, passingScore: 40 }),
+    settings: TestSettingsSchema.optional().default({ ...DEFAULT_TEST_SETTINGS }),
 })
 
 // ── Update Test ──

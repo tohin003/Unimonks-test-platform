@@ -72,13 +72,25 @@ interface CostInfo {
     costUSD: number
 }
 
-export type DocumentQuestionStrategy = 'EXTRACTED' | 'AI_GENERATED'
+export type DocumentQuestionStrategy = 'EXTRACTED' | 'AI_GENERATED' | 'AI_VISION_FALLBACK'
+export type PdfImportFallbackMode = 'EXTRACTED' | 'GENERATED'
 
 export interface ExtractedQuestionAnalysis {
     detectedAsMcqDocument: boolean
     answerHintCount: number
     candidateBlockCount: number
     questions: GeneratedQuestion[]
+}
+
+export interface PdfVisionFallbackResult {
+    mode: PdfImportFallbackMode
+    questions?: GeneratedQuestion[]
+    failedCount?: number
+    cost?: CostInfo
+    error?: boolean
+    message?: string
+    pageCount: number
+    chunkCount: number
 }
 
 // ── Cost Tracking Helper ──
@@ -128,12 +140,40 @@ function chunkText(text: string, maxChars = 16000, overlap = 500): string[] {
     return chunks
 }
 
+function chunkArray<T>(items: T[], size: number): T[][]
+function chunkArray<T>(items: T[], size: number): T[][] {
+    if (size <= 0) return [items]
+
+    const chunks: T[][] = []
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size))
+    }
+    return chunks
+}
+
 function normalizeDocumentText(text: string): string {
-    return text
+    const normalized = text
         .replace(/\r\n?/g, '\n')
+        .replace(/\f/g, '\n')
         .replace(/\u00a0/g, ' ')
+        .replace(/[\u200b-\u200d\uFEFF]/g, '')
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, '\'')
         .replace(/[ \t]+\n/g, '\n')
         .replace(/[ \t]+/g, ' ')
+        .replace(/(?:^|\n)\s*--\s*\d+\s*of\s*\d+\s*--\s*(?=\n|$)/gi, '\n')
+        .replace(/\bDi\s+culty\b/gi, 'Difficulty')
+
+    const cleanedLines = normalized
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .filter(line => !/^(?:ffi|ff|fi|fl){1,4}$/i.test(line))
+        .filter(line => !/^[-–—_=*.]{3,}$/.test(line))
+        .filter(line => !/^(?:page\s*)?\d+\s*(?:of|\/)\s*\d+$/i.test(line))
+
+    return cleanedLines
+        .join('\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim()
 }
@@ -186,6 +226,13 @@ function looksLikeQuestionStart(line: string): boolean {
     return stripQuestionLabel(line) !== null
 }
 
+const OPTION_LINE_REGEX = /^\(?([A-D])\)?\s*[.)\-:]?\s*(.+)$/i
+const ANSWER_LINE_REGEX =
+    /^(?:answer|ans(?:wer)?|correct\s*answer|correct\s*option|right\s*answer)\s*(?:is\s*)?[:.\-]?\s*(?:option\s*)?\(?([A-D])\)?(?=\s|$)/i
+const EXPLANATION_LINE_REGEX = /^(?:explanation|reason)\s*[:\-]?\s*(.+)$/i
+const DIFFICULTY_LINE_REGEX = /^difficulty\s*[:\-]?\s*(easy|medium|hard)\b/i
+const TOPIC_LINE_REGEX = /^topic\s*[:\-]?\s*(.+)$/i
+
 function extractAnswerKey(text: string): Map<number, string> {
     const answerKey = new Map<number, string>()
     const answerSectionMatch = text.match(
@@ -195,7 +242,7 @@ function extractAnswerKey(text: string): Map<number, string> {
     const searchArea = answerSectionMatch?.[1] ?? ''
     if (!searchArea) return answerKey
 
-    const pairRegex = /(\d{1,4})\s*[\).:\-]?\s*(?:option\s*)?([A-D])\b/gi
+    const pairRegex = /(\d{1,4})\s*[\).:\-]?\s*(?:option\s*)?\(?([A-D])\)?(?=\s|$)/gi
     let match: RegExpExecArray | null
     while ((match = pairRegex.exec(searchArea)) !== null) {
         answerKey.set(Number.parseInt(match[1], 10), match[2].toUpperCase())
@@ -226,31 +273,50 @@ function parseQuestionBlock(block: string, answerKey: Map<number, string>): {
     const stemParts = [firstLine.stem]
     const options = new Map<string, string>()
     let activeOption: string | null = null
+    let activeSection: 'stem' | 'option' | 'explanation' = 'stem'
     let correctOptionId: string | null = null
     let explanation = ''
+    let difficulty: GeneratedQuestion['difficulty'] | null = null
+    let topic: string | null = null
     let answerHintUsed = false
 
     for (const line of rawLines.slice(1)) {
         if (looksLikeQuestionStart(line)) break
 
-        const answerMatch = line.match(
-            /^(?:answer|ans(?:wer)?|correct\s*answer|correct\s*option|right\s*answer)\s*[:\-]?\s*(?:option\s*)?([A-D])\b/i
-        )
+        const answerMatch = line.match(ANSWER_LINE_REGEX)
         if (answerMatch) {
             correctOptionId = answerMatch[1].toUpperCase()
             answerHintUsed = true
             activeOption = null
+            activeSection = 'stem'
             continue
         }
 
-        const explanationMatch = line.match(/^(?:explanation|reason)\s*[:\-]?\s*(.+)$/i)
+        const explanationMatch = line.match(EXPLANATION_LINE_REGEX)
         if (explanationMatch) {
             explanation = explanationMatch[1].trim()
             activeOption = null
+            activeSection = 'explanation'
             continue
         }
 
-        const optionMatch = line.match(/^\(?([A-D])\)?\s*[.)\-:]?\s+(.+)$/i)
+        const difficultyMatch = line.match(DIFFICULTY_LINE_REGEX)
+        if (difficultyMatch) {
+            difficulty = difficultyMatch[1].toUpperCase() as GeneratedQuestion['difficulty']
+            activeOption = null
+            activeSection = 'stem'
+            continue
+        }
+
+        const topicMatch = line.match(TOPIC_LINE_REGEX)
+        if (topicMatch) {
+            topic = normalizeStem(topicMatch[1])
+            activeOption = null
+            activeSection = 'stem'
+            continue
+        }
+
+        const optionMatch = line.match(OPTION_LINE_REGEX)
         if (optionMatch) {
             const optionId = optionMatch[1].toUpperCase()
             const optionText = normalizeOptionText(optionMatch[2])
@@ -264,6 +330,7 @@ function parseQuestionBlock(block: string, answerKey: Map<number, string>): {
 
             options.set(optionId, optionText)
             activeOption = optionId
+            activeSection = 'option'
             continue
         }
 
@@ -272,7 +339,13 @@ function parseQuestionBlock(block: string, answerKey: Map<number, string>): {
             continue
         }
 
+        if (activeSection === 'explanation' && explanation) {
+            explanation = `${explanation} ${normalizeOptionText(line)}`.trim()
+            continue
+        }
+
         stemParts.push(line)
+        activeSection = 'stem'
     }
 
     if (!correctOptionId && firstLine.questionNumber !== null) {
@@ -295,8 +368,8 @@ function parseQuestionBlock(block: string, answerKey: Map<number, string>): {
         stem: normalizeStem(stemParts.join(' ')),
         options: optionEntries,
         explanation: explanation || 'Imported from structured MCQ document.',
-        difficulty: guessDifficulty(stemParts.join(' ')),
-        topic: detectTopic(stemParts.join(' ')),
+        difficulty: difficulty || guessDifficulty(stemParts.join(' ')),
+        topic: topic || detectTopic(stemParts.join(' ')),
     }
 
     return {
@@ -306,15 +379,19 @@ function parseQuestionBlock(block: string, answerKey: Map<number, string>): {
     }
 }
 
-export function extractQuestionsFromDocumentText(text: string): ExtractedQuestionAnalysis {
-    const structuredText = normalizeDocumentText(text)
+function buildStructuredDocumentText(text: string) {
+    return text
         .replace(/\n(?=\d+\s*[.)])/g, '\n')
         .replace(/([^\n])\s+(?=(?:question\s*\d+|ques(?:tion)?\s*\d+|q\s*\d+|\d+\s*[.)-])\s)/gi, '$1\n')
-        .replace(/([^\n])\s+(?=(?:\(?[A-D]\)?\s*[.)\-:])\s+)/g, '$1\n')
-        .replace(/([^\n])\s+(?=(?:answer|ans(?:wer)?|correct\s*answer|explanation)\s*[:\-])/gi, '$1\n')
+        .replace(/([^\n])\s+(?=(?:\(?[A-D]\)?\s*[.)\-:])\s*\S)/g, '$1\n')
+        .replace(/([^\n])\s+(?=(?:answer|ans(?:wer)?|correct\s*answer|correct\s*option|right\s*answer|explanation|reason|difficulty|topic)\s*[:.\-])/gi, '$1\n')
+}
 
-    const answerKey = extractAnswerKey(structuredText)
-    const blocks = structuredText
+function analyzeStructuredDocumentText(structuredText: string): ExtractedQuestionAnalysis {
+    const normalizedStructuredText = normalizeDocumentText(structuredText)
+
+    const answerKey = extractAnswerKey(normalizedStructuredText)
+    const blocks = normalizedStructuredText
         .split(/\n(?=(?:question\s*|ques(?:tion)?\s*|q\s*)?\d+\s*(?:[.)\-:]|\b)\s+)/i)
         .map(block => block.trim())
         .filter(Boolean)
@@ -341,6 +418,44 @@ export function extractQuestionsFromDocumentText(text: string): ExtractedQuestio
         candidateBlockCount,
         questions: deduplicateQuestions(questions),
     }
+}
+
+function isBetterExtractedAnalysis(
+    candidate: ExtractedQuestionAnalysis,
+    currentBest: ExtractedQuestionAnalysis,
+) {
+    if (candidate.questions.length !== currentBest.questions.length) {
+        return candidate.questions.length > currentBest.questions.length
+    }
+
+    if (candidate.answerHintCount !== currentBest.answerHintCount) {
+        return candidate.answerHintCount > currentBest.answerHintCount
+    }
+
+    return candidate.candidateBlockCount > currentBest.candidateBlockCount
+}
+
+export function extractQuestionsFromDocumentText(text: string): ExtractedQuestionAnalysis {
+    const normalizedText = normalizeDocumentText(text)
+    const extractionVariants = [
+        buildStructuredDocumentText(normalizedText),
+        buildStructuredDocumentText(
+            normalizedText
+                .replace(/\b(answer|ans(?:wer)?|correct\s*answer)\s*[:.\-]?\s*\(([A-D])\)/gi, '$1: $2')
+                .replace(/\b(correct\s*option)\s*[:.\-]?\s*\(([A-D])\)/gi, '$1: $2')
+        ),
+    ]
+
+    let bestAnalysis = analyzeStructuredDocumentText(extractionVariants[0])
+
+    for (const variant of extractionVariants.slice(1)) {
+        const candidateAnalysis = analyzeStructuredDocumentText(variant)
+        if (isBetterExtractedAnalysis(candidateAnalysis, bestAnalysis)) {
+            bestAnalysis = candidateAnalysis
+        }
+    }
+
+    return bestAnalysis
 }
 
 // ── Generate Personalized Feedback ──
@@ -601,6 +716,176 @@ export async function generateQuestionsFromText(
     return { questions: allQuestions, failedCount: Math.max(0, failedCount), cost: totalCost }
 }
 
+async function renderPdfPagesAsImages(buffer: Buffer): Promise<string[]> {
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: buffer })
+
+    try {
+        const result = await parser.getScreenshot({
+            desiredWidth: 1440,
+            imageBuffer: false,
+            imageDataUrl: true,
+            pageJoiner: '\n',
+        })
+
+        return result.pages
+            .map((page) => page.dataUrl)
+            .filter((pageDataUrl): pageDataUrl is string => Boolean(pageDataUrl))
+    } finally {
+        await parser.destroy()
+    }
+}
+
+export async function generateQuestionsFromPdfVisionFallback(
+    buffer: Buffer,
+    count: number = 30,
+    auditUserId?: string,
+): Promise<PdfVisionFallbackResult> {
+    if (!openai) {
+        return {
+            error: true,
+            message: 'OpenAI API key not configured. Please set OPENAI_API_KEY.',
+            pageCount: 0,
+            chunkCount: 0,
+            mode: 'GENERATED',
+        }
+    }
+
+    const pageImages = await renderPdfPagesAsImages(buffer)
+    if (pageImages.length === 0) {
+        return {
+            error: true,
+            message: 'Could not render PDF pages for AI fallback.',
+            pageCount: 0,
+            chunkCount: 0,
+            mode: 'GENERATED',
+        }
+    }
+
+    const model = 'gpt-4o'
+    const pageChunks = chunkArray(pageImages, 4)
+    let overallMode: PdfImportFallbackMode = 'GENERATED'
+    let allQuestions: GeneratedQuestion[] = []
+    let failedCount = 0
+    const totalCost: CostInfo = {
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUSD: 0,
+    }
+
+    for (const [chunkIndex, imageChunk] of pageChunks.entries()) {
+        const approximateChunkTarget = Math.max(
+            8,
+            Math.ceil((count / pageImages.length) * imageChunk.length),
+        )
+        const prompt = `You are extracting or generating CUET-style multiple-choice questions from PDF page screenshots.
+
+Priority:
+1. If the pages already contain MCQs with options and answers, extract those MCQs faithfully. Do not invent new facts or rewrite the question meaning.
+2. If the pages are notes or theory without explicit MCQs, generate up to ${approximateChunkTarget} CUET-style MCQs strictly from the visible content.
+
+Return strict JSON:
+{
+  "mode": "EXTRACTED" | "GENERATED",
+  "questions": [
+    {
+      "stem": "question text",
+      "options": [
+        {"id": "A", "text": "option text", "isCorrect": false},
+        {"id": "B", "text": "option text", "isCorrect": true},
+        {"id": "C", "text": "option text", "isCorrect": false},
+        {"id": "D", "text": "option text", "isCorrect": false}
+      ],
+      "explanation": "brief explanation",
+      "difficulty": "EASY" | "MEDIUM" | "HARD",
+      "topic": "short topic tag"
+    }
+  ]
+}
+
+Rules:
+- Exactly 4 options.
+- Exactly 1 correct option.
+- Preserve visible answer keys when extracting existing MCQs.
+- Preserve the visible explanation if present; otherwise give a concise explanation.
+- Do not include page numbers, headers, footers, or formatting artifacts.
+- If a question is cut off across page boundaries, include it only when enough content is visible to produce a valid MCQ.
+- Focus only on the pages in this chunk (${chunkIndex + 1}/${pageChunks.length}).`
+
+        try {
+            const response = await openai.chat.completions.create({
+                model,
+                temperature: 0.1,
+                max_tokens: 4000,
+                response_format: { type: 'json_object' },
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            ...imageChunk.map((imageUrl) => ({
+                                type: 'image_url' as const,
+                                image_url: { url: imageUrl },
+                            })),
+                        ],
+                    },
+                ],
+            })
+
+            const content = response.choices[0]?.message?.content
+            if (!content) {
+                failedCount += approximateChunkTarget
+                continue
+            }
+
+            const parsed = JSON.parse(content) as {
+                mode?: PdfImportFallbackMode
+                questions?: GeneratedQuestion[]
+            }
+
+            if (parsed.mode === 'EXTRACTED') {
+                overallMode = 'EXTRACTED'
+            }
+
+            const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : []
+            const validQuestions: GeneratedQuestion[] = []
+            for (const question of rawQuestions) {
+                if (validateQuestion(question)) {
+                    validQuestions.push(question)
+                } else {
+                    failedCount += 1
+                }
+            }
+
+            allQuestions.push(...validQuestions)
+
+            const cost = calculateCost(model, response.usage as { prompt_tokens?: number; completion_tokens?: number })
+            totalCost.inputTokens += cost.inputTokens
+            totalCost.outputTokens += cost.outputTokens
+            totalCost.costUSD += cost.costUSD
+        } catch (err) {
+            console.error('[AI] PDF vision fallback failed on chunk:', err)
+            failedCount += approximateChunkTarget
+        }
+    }
+
+    allQuestions = deduplicateQuestions(allQuestions)
+
+    if (auditUserId) {
+        await logCostToAudit(auditUserId, 'AI_DOC_PARSE_FALLBACK', totalCost)
+    }
+
+    return {
+        mode: overallMode,
+        questions: allQuestions,
+        failedCount,
+        cost: totalCost,
+        pageCount: pageImages.length,
+        chunkCount: pageChunks.length,
+    }
+}
+
 // ── Single-Chunk Generation ──
 async function generateFromChunk(
     chunk: string,
@@ -683,8 +968,19 @@ export async function parsePdfToText(buffer: Buffer): Promise<string> {
     const parser = new PDFParse({ data: buffer })
 
     try {
-        const result = await parser.getText()
+        const result = await parser.getText({ pageJoiner: '\n' })
         return normalizeDocumentText(result.text)
+    } catch (primaryError) {
+        const fallbackResult = await parser.getText({
+            pageJoiner: '\n',
+            disableNormalization: true,
+        })
+
+        if (!fallbackResult.text?.trim()) {
+            throw primaryError
+        }
+
+        return normalizeDocumentText(fallbackResult.text)
     } finally {
         await parser.destroy()
     }
