@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { destroyAllSessions } from '@/lib/session'
 import { sendWelcomeEmail } from '@/lib/services/email-service'
 import type { CreateUserInput, UpdateUserInput, UserQueryInput } from '@/lib/validations/user.schema'
 import { Role, UserStatus, Prisma } from '@prisma/client'
@@ -53,6 +54,14 @@ export async function listUsers(query: UserQueryInput) {
 
 // ── Create User ──
 export async function createUser(data: CreateUserInput) {
+    if (data.role !== 'STUDENT') {
+        return {
+            error: true,
+            code: 'INVALID_ROLE',
+            message: 'Only student accounts can be created from user management',
+        }
+    }
+
     // Check email uniqueness
     const existing = await prisma.user.findUnique({ where: { email: data.email } })
     if (existing) {
@@ -94,6 +103,34 @@ export async function updateUser(id: string, data: UpdateUserInput) {
         return { error: true, code: 'NOT_FOUND', message: 'User not found' }
     }
 
+    const isAdmin = existing.role === 'ADMIN'
+
+    if (data.role === 'ADMIN' && existing.role !== 'ADMIN') {
+        return {
+            error: true,
+            code: 'SOLE_ADMIN_ONLY',
+            message: 'Creating additional admin accounts is not allowed',
+        }
+    }
+
+    if (isAdmin) {
+        if (data.role && data.role !== 'ADMIN') {
+            return {
+                error: true,
+                code: 'ADMIN_PROTECTED',
+                message: 'The primary admin role cannot be changed',
+            }
+        }
+
+        if (data.status && data.status !== 'ACTIVE') {
+            return {
+                error: true,
+                code: 'ADMIN_PROTECTED',
+                message: 'The primary admin cannot be deactivated or suspended',
+            }
+        }
+    }
+
     // If email is being changed, check uniqueness
     if (data.email && data.email !== existing.email) {
         const emailTaken = await prisma.user.findUnique({ where: { email: data.email } })
@@ -122,6 +159,10 @@ export async function updateUser(id: string, data: UpdateUserInput) {
         },
     })
 
+    if (existing.status === 'ACTIVE' && user.status !== 'ACTIVE') {
+        await destroyAllSessions(id)
+    }
+
     return { user }
 }
 
@@ -132,6 +173,14 @@ export async function deleteUser(id: string) {
         return { error: true, code: 'NOT_FOUND', message: 'User not found' }
     }
 
+    if (existing.role === 'ADMIN') {
+        return {
+            error: true,
+            code: 'ADMIN_PROTECTED',
+            message: 'The primary admin cannot be deleted',
+        }
+    }
+
     if (existing.status === 'INACTIVE') {
         return { error: true, code: 'ALREADY_DELETED', message: 'User is already inactive' }
     }
@@ -140,6 +189,8 @@ export async function deleteUser(id: string) {
         where: { id },
         data: { status: 'INACTIVE' },
     })
+
+    await destroyAllSessions(id)
 
     return { message: 'User deactivated successfully' }
 }

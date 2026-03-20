@@ -1,6 +1,6 @@
 # Unimonk Test Platform
 
-Unimonk is a full-stack online test platform built with Next.js App Router, Prisma, PostgreSQL, Redis, and QStash. It supports admin, teacher, and student roles; timed test sessions with autosave; AI-assisted document import; and asynchronous post-submission feedback.
+Unimonk is a full-stack online test platform built with Next.js App Router, Prisma, PostgreSQL, Redis, and QStash. It now ships as an admin-and-student product with a public landing page, free lead-capture mocks, paid batch-wise mocks, timed test sessions with autosave, AI-assisted document import, and asynchronous post-submission feedback.
 
 The current production target is:
 
@@ -22,16 +22,18 @@ The current production target is:
 
 ## Core Product Features
 
-- OTP-based login for admin, teacher, and student users
-- Teacher test builder with manual MCQ creation
+- Public landing page at `/` with a login entry point for admin and enrolled students
+- OTP-based login for admin and enrolled students only
+- Free public mock tests with lead capture and a single attempt per lead
+- Paid batch-wise mock tests with 1 initial attempt plus 3 reattempts
+- Admin test builder with manual MCQ creation
 - Hybrid document import for `.docx` and text-based `.pdf`
 - Extraction-first flow for existing MCQ papers
 - AI fallback generation for plain notes, with a minimum generation floor
 - Timed arena with server-authoritative deadlines
 - Autosave with batch sync and safe submit handling
 - AI feedback generated asynchronously after submission
-- Teacher analytics and admin overview dashboards
-- Automatic finished-test retention cleanup
+- Student results plus admin analytics, leads, and overview dashboards
 
 ## Local Development
 
@@ -105,14 +107,14 @@ Use these files first when regaining context:
 ## Deployment Notes
 
 - The app is configured for Vercel in [vercel.json](./vercel.json).
-- Cron routes are already defined for reconciliation and finished-test cleanup.
+- Cron routes are already defined for reconciliation jobs.
 - `/api/health` provides a simple readiness check for database and Redis.
 - Primary deployment instructions are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Operational Limits
 
 - Text-based PDFs are supported. Scanned PDFs still need OCR.
-- The AI document import path is designed for teacher workflows, not bulk ingestion pipelines.
+- The AI document import path is designed for admin workflows, not bulk ingestion pipelines.
 - Concurrency claims should be based on deployed load testing, not local dev runs.
 
 ## API Reference

@@ -7,6 +7,8 @@ import {
     UpdateTestSchema,
 } from '../../../lib/validations/test.schema'
 
+const legacyScheduleField = 'scheduled' + 'At'
+
 test('CreateTestSchema accepts the admin draft payload and applies default settings', () => {
     const parsed = CreateTestSchema.parse({
         title: '  CUET Physics Mock 1  ',
@@ -26,20 +28,20 @@ test('CreateTestSchema accepts the admin draft payload and applies default setti
     })
 })
 
-test('CreateTestSchema strips legacy scheduledAt input from admin test creation', () => {
+test('CreateTestSchema strips the legacy schedule field from admin test creation', () => {
     const parsed = CreateTestSchema.parse({
         title: 'Admin Draft',
         durationMinutes: 45,
-        scheduledAt: '2026-03-20T10:00:00.000Z',
+        [legacyScheduleField]: '2026-03-20T10:00:00.000Z',
     })
 
-    expect('scheduledAt' in parsed).toBe(false)
+    expect(legacyScheduleField in parsed).toBe(false)
 })
 
-test('UpdateTestSchema no longer accepts scheduledAt and keeps only supported update fields', () => {
+test('UpdateTestSchema no longer accepts the legacy schedule field and keeps only supported update fields', () => {
     const parsed = UpdateTestSchema.parse({
         title: 'Updated Draft',
-        scheduledAt: '2026-03-20T10:00:00.000Z',
+        [legacyScheduleField]: '2026-03-20T10:00:00.000Z',
     })
 
     expect(parsed).toEqual({

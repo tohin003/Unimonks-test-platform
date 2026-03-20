@@ -347,7 +347,7 @@ export function extractQuestionsFromDocumentText(text: string): ExtractedQuestio
 export async function generatePersonalizedFeedback(
     session: SessionData,
     questions: QuestionData[],
-    teacherId?: string
+    auditUserId?: string
 ): Promise<FeedbackResult> {
     const answers = (session.answers as AnswerEntry[] | null) || []
 
@@ -441,7 +441,7 @@ Focus especially on ${wrongAnswers.length > 0 ? 'the topics they got wrong' : 'm
 
         // Log cost
         const cost = calculateCost(model, response.usage as { prompt_tokens?: number; completion_tokens?: number })
-        if (teacherId) await logCostToAudit(teacherId, 'AI_FEEDBACK', cost)
+        if (auditUserId) await logCostToAudit(auditUserId, 'AI_FEEDBACK', cost)
 
         const parsed = JSON.parse(content)
 
@@ -545,7 +545,7 @@ function deduplicateQuestions(questions: GeneratedQuestion[]): GeneratedQuestion
 export async function generateQuestionsFromText(
     text: string,
     count: number = 10,
-    teacherId?: string
+    auditUserId?: string
 ): Promise<{ questions?: GeneratedQuestion[]; failedCount?: number; cost?: CostInfo; error?: boolean; message?: string }> {
     if (!openai) {
         return { error: true, message: 'OpenAI API key not configured. Please set OPENAI_API_KEY.' }
@@ -596,8 +596,7 @@ export async function generateQuestionsFromText(
         allQuestions = allQuestions.slice(0, count)
     }
 
-    // Log cost to AuditLog if we have a teacherId
-    if (teacherId) await logCostToAudit(teacherId, 'AI_GENERATE', totalCost)
+    if (auditUserId) await logCostToAudit(auditUserId, 'AI_GENERATE', totalCost)
 
     return { questions: allQuestions, failedCount: Math.max(0, failedCount), cost: totalCost }
 }

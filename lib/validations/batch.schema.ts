@@ -7,14 +7,12 @@ export const CreateBatchSchema = z.object({
         .min(3, 'Code must be at least 3 characters')
         .max(20, 'Code must be at most 20 characters')
         .regex(/^[A-Z0-9\-]+$/, 'Code must be uppercase letters, numbers, and dashes only'),
-    teacherId: z.string().uuid('Valid teacher ID is required'),
 })
 
 // ── Update Batch ──
 export const UpdateBatchSchema = z.object({
     name: z.string().min(2).max(100).optional(),
     code: z.string().min(3).max(20).regex(/^[A-Z0-9\-]+$/, 'Code must be uppercase letters, numbers, and dashes only').optional(),
-    teacherId: z.string().uuid().optional(),
     status: z.enum(['ACTIVE', 'UPCOMING', 'COMPLETED']).optional(),
 }).refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided for update',

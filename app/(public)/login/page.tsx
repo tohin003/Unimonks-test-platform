@@ -117,13 +117,12 @@ export default function LoginPage() {
                 role: data.user.role.toLowerCase(),
             };
 
-            const roleName = normalizedUser.role.charAt(0).toUpperCase() + normalizedUser.role.slice(1);
+            const roleName = normalizedUser.role === "admin" ? "Admin" : "Student";
             toast.success(`Welcome ${roleName}!`, { description: "Redirecting to your dashboard..." });
 
             // Role-based redirect
             const dashboardMap: Record<string, string> = {
                 admin: "/admin/dashboard",
-                teacher: "/teacher/dashboard",
                 student: "/student/dashboard",
             };
             router.replace(dashboardMap[normalizedUser.role] || "/login");
@@ -164,7 +163,7 @@ export default function LoginPage() {
                 </div>
                 <h1 className="text-4xl font-serif text-slate-900 font-extrabold tracking-tight">Unimonk</h1>
                 <p className="text-slate-600 mt-3 text-sm max-w-sm">
-                    Welcome back. Sign in to your account using your registered email.
+                    Login is available for the admin and enrolled students. Public free mocks do not require an account.
                 </p>
             </div>
 
@@ -181,7 +180,7 @@ export default function LoginPage() {
                             </div>
                             <CardTitle className="text-2xl font-serif font-bold text-slate-800">Sign in</CardTitle>
                             <CardDescription className="text-slate-500">
-                                Enter your registered email address. We&apos;ll send you a one-time code.
+                                Enter the registered email for your admin or enrolled student account. We&apos;ll send you a one-time code.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-5 px-8">

@@ -3,6 +3,8 @@ import { Role } from '@prisma/client'
 import { getSessionFromRequest } from '@/lib/session'
 import { AppError } from '@/lib/middleware/error-handler'
 
+const APP_ROLES = new Set<Role>(['ADMIN', 'STUDENT'])
+
 type Handler = (
     req: NextRequest,
     context: { userId: string; role: Role; params?: Record<string, string> }
@@ -24,6 +26,10 @@ export function withAuth(handler: Handler, allowedRoles?: Role[]) {
             const session = getSessionFromRequest(req)
 
             if (!session) {
+                return NextResponse.json({ error: true, code: 'UNAUTHORIZED', message: 'Authentication required' }, { status: 401 })
+            }
+
+            if (!APP_ROLES.has(session.role)) {
                 return NextResponse.json({ error: true, code: 'UNAUTHORIZED', message: 'Authentication required' }, { status: 401 })
             }
 

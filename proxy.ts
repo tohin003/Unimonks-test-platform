@@ -3,8 +3,10 @@ import { jwtVerify, type JWTPayload as JosePayload } from 'jose'
 
 interface JWTPayload extends JosePayload {
     userId: string
-    role: 'ADMIN' | 'TEACHER' | 'STUDENT'
+    role: string
 }
+
+type AppRole = 'ADMIN' | 'STUDENT'
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!)
 if (!process.env.JWT_SECRET) {
@@ -38,10 +40,13 @@ function nextWithHeaders(requestHeaders: Headers, requestId: string) {
 
 const PUBLIC_ROUTES = ['/login', '/reset-password', '/forgot-password']
 
-const ROLE_ROUTES: Record<string, 'ADMIN' | 'TEACHER' | 'STUDENT'> = {
+const ROLE_ROUTES: Record<string, AppRole> = {
     '/admin': 'ADMIN',
-    '/teacher': 'TEACHER',
     '/student': 'STUDENT',
+}
+
+function isAppRole(role: string): role is AppRole {
+    return role === 'ADMIN' || role === 'STUDENT'
 }
 
 export async function proxy(req: NextRequest) {
@@ -86,7 +91,7 @@ export async function proxy(req: NextRequest) {
     const token = req.cookies.get('access_token')?.value
     const payload = token ? await verifyToken(token) : null
 
-    if (!payload) {
+    if (!payload || !isAppRole(payload.role)) {
         return withRequestId(NextResponse.redirect(new URL('/login', req.url)), requestId)
     }
 
@@ -112,7 +117,6 @@ export async function proxy(req: NextRequest) {
 
                 const dashboardMap: Record<string, string> = {
                     ADMIN: '/admin/dashboard',
-                    TEACHER: '/teacher/dashboard',
                     STUDENT: '/student/dashboard',
                 }
 
@@ -131,11 +135,9 @@ export async function proxy(req: NextRequest) {
 export const config = {
     matcher: [
         '/admin/:path*',
-        '/teacher/:path*',
         '/student/:path*',
         '/arena/:path*',
         '/api/admin/:path*',
-        '/api/teacher/:path*',
         '/api/student/:path*',
         '/api/arena/:path*',
         '/api/webhooks/:path*',

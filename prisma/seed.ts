@@ -8,8 +8,14 @@ import {
     FREE_BATCH_NAME,
     STANDARD_BATCH_KIND,
 } from '../lib/config/platform-policy'
+import { normalizeOptionalEmail } from '../lib/utils/contact-normalization'
 
 const prisma = new PrismaClient()
+
+const adminAccount = {
+    email: 'tohin1400@gmail.com',
+    name: 'Admin User',
+}
 
 const studentNames = [
     'Alice Patel',
@@ -27,27 +33,27 @@ const studentNames = [
 type SeedUserInput = {
     email: string
     name: string
-    role: 'ADMIN' | 'TEACHER' | 'STUDENT'
+    role: 'ADMIN' | 'STUDENT'
     status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
 }
 
 type SeedBatchInput = {
     name: string
     code: string
-    teacherId: string
     kind: 'FREE_SYSTEM' | 'STANDARD'
     status: 'ACTIVE' | 'UPCOMING' | 'COMPLETED'
 }
 
+type SeedQuestionInput = Prisma.QuestionCreateWithoutTestInput
+
 type SeedTestInput = {
-    teacherId: string
-    createdById: string
     title: string
     description: string
     durationMinutes: number
     status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
     source: 'MANUAL' | 'AI_GENERATED'
-    questions: Prisma.QuestionCreateWithoutTestInput[]
+    createdById: string
+    questions: SeedQuestionInput[]
 }
 
 async function upsertUser(data: SeedUserInput) {
@@ -67,7 +73,6 @@ async function upsertBatch(data: SeedBatchInput) {
         where: { code: data.code },
         update: {
             name: data.name,
-            teacherId: data.teacherId,
             kind: data.kind,
             status: data.status,
         },
@@ -75,9 +80,11 @@ async function upsertBatch(data: SeedBatchInput) {
     })
 }
 
-async function ensureQuestions(testId: string, questions: Prisma.QuestionCreateWithoutTestInput[]) {
+async function ensureQuestions(testId: string, questions: SeedQuestionInput[]) {
     const existingQuestionCount = await prisma.question.count({ where: { testId } })
-    if (existingQuestionCount > 0) return
+    if (existingQuestionCount > 0) {
+        return
+    }
 
     await prisma.question.createMany({
         data: questions.map((question) => ({
@@ -94,13 +101,8 @@ async function ensureQuestions(testId: string, questions: Prisma.QuestionCreateW
 
 async function upsertTest(data: SeedTestInput) {
     const existing = await prisma.test.findFirst({
-        where: {
-            teacherId: data.teacherId,
-            title: data.title,
-        },
-        select: {
-            id: true,
-        },
+        where: { title: data.title },
+        select: { id: true },
     })
 
     if (existing) {
@@ -121,7 +123,6 @@ async function upsertTest(data: SeedTestInput) {
 
     return prisma.test.create({
         data: {
-            teacherId: data.teacherId,
             createdById: data.createdById,
             title: data.title,
             description: data.description,
@@ -141,7 +142,9 @@ async function ensureBatchAssignment(testId: string, batchId: string) {
         select: { id: true },
     })
 
-    if (existing) return existing
+    if (existing) {
+        return existing
+    }
 
     return prisma.testAssignment.create({
         data: { testId, batchId },
@@ -198,27 +201,71 @@ async function upsertAliceSession(testId: string, studentId: string) {
     })
 }
 
+async function upsertDemoLead(freeTestId: string) {
+    const email = 'public.demo@unimonk.com'
+    const emailNormalized = normalizeOptionalEmail(email)
+
+    const existingLead = await prisma.lead.findFirst({
+        where: { emailNormalized: emailNormalized ?? undefined },
+        select: { id: true },
+    })
+
+    const lead = existingLead
+        ? await prisma.lead.update({
+            where: { id: existingLead.id },
+            data: {
+                name: 'Public Demo Lead',
+                email,
+                emailNormalized,
+            },
+        })
+        : await prisma.lead.create({
+            data: {
+                name: 'Public Demo Lead',
+                email,
+                emailNormalized,
+            },
+        })
+
+    const existingSession = await prisma.leadTestSession.findUnique({
+        where: {
+            testId_leadId: {
+                testId: freeTestId,
+                leadId: lead.id,
+            },
+        },
+        select: { id: true },
+    })
+
+    if (existingSession) {
+        return lead
+    }
+
+    await prisma.leadTestSession.create({
+        data: {
+            testId: freeTestId,
+            leadId: lead.id,
+            status: 'SUBMITTED',
+            startedAt: new Date(Date.now() - 15 * 60 * 1000),
+            serverDeadline: new Date(Date.now() - 5 * 60 * 1000),
+            submittedAt: new Date(Date.now() - 6 * 60 * 1000),
+            answers: { 1: 'C', 2: 'B', 3: 'A' },
+            score: 2,
+            totalMarks: 3,
+            percentage: 66.67,
+        },
+    })
+
+    return lead
+}
+
 async function main() {
     console.log('🌱 Seeding database...')
 
     const admin = await upsertUser({
-        email: 'tohin1400@gmail.com',
-        name: 'Admin User',
+        email: adminAccount.email,
+        name: adminAccount.name,
         role: 'ADMIN',
-        status: 'ACTIVE',
-    })
-
-    const teacher1 = await upsertUser({
-        email: 'tohin14000@gmail.com',
-        name: 'Sarah Johnson',
-        role: 'TEACHER',
-        status: 'ACTIVE',
-    })
-
-    const teacher2 = await upsertUser({
-        email: 'michael@unimonk.com',
-        name: 'Michael Chen',
-        role: 'TEACHER',
         status: 'ACTIVE',
     })
 
@@ -241,31 +288,27 @@ async function main() {
     const freeBatch = await upsertBatch({
         name: FREE_BATCH_NAME,
         code: FREE_BATCH_CODE,
-        teacherId: admin.id,
         kind: FREE_BATCH_KIND,
         status: 'ACTIVE',
     })
 
-    const batch1 = await upsertBatch({
-        name: 'NEET Batch A',
-        code: 'BATCH-2025-A',
-        teacherId: teacher1.id,
+    const batchA = await upsertBatch({
+        name: 'CUET Batch A',
+        code: 'CUET-2026-A',
         kind: STANDARD_BATCH_KIND,
         status: 'ACTIVE',
     })
 
-    const batch2 = await upsertBatch({
-        name: 'NEET Batch B',
-        code: 'BATCH-2025-B',
-        teacherId: teacher2.id,
+    const batchB = await upsertBatch({
+        name: 'CUET Batch B',
+        code: 'CUET-2026-B',
         kind: STANDARD_BATCH_KIND,
         status: 'ACTIVE',
     })
 
     await upsertBatch({
-        name: 'JEE Batch C',
-        code: 'BATCH-2025-C',
-        teacherId: teacher1.id,
+        name: 'CUET Batch C',
+        code: 'CUET-2026-C',
         kind: STANDARD_BATCH_KIND,
         status: 'UPCOMING',
     })
@@ -277,7 +320,7 @@ async function main() {
         data: batchAStudents
             .map((name) => students.get(name)?.id)
             .filter((studentId): studentId is string => Boolean(studentId))
-            .map((studentId) => ({ batchId: batch1.id, studentId })),
+            .map((studentId) => ({ batchId: batchA.id, studentId })),
         skipDuplicates: true,
     })
 
@@ -285,22 +328,21 @@ async function main() {
         data: batchBStudents
             .map((name) => students.get(name)?.id)
             .filter((studentId): studentId is string => Boolean(studentId))
-            .map((studentId) => ({ batchId: batch2.id, studentId })),
+            .map((studentId) => ({ batchId: batchB.id, studentId })),
         skipDuplicates: true,
     })
 
-    const test1 = await upsertTest({
-        teacherId: teacher1.id,
-        createdById: admin.id,
-        title: 'Biology: Cell Structure',
-        description: 'A comprehensive test covering cell organelles, membrane transport, and cell division.',
+    const paidBiologyTest = await upsertTest({
+        title: 'CUET Biology Mock 1',
+        description: 'Paid batch mock covering cell organelles, membrane transport, and cell division.',
         durationMinutes: 30,
         status: 'PUBLISHED',
         source: 'MANUAL',
+        createdById: admin.id,
         questions: [
             {
                 order: 1,
-                stem: 'Which organelle is known as the "powerhouse" of the cell?',
+                stem: 'Which organelle is known as the powerhouse of the cell?',
                 options: {
                     A: 'Ribosome',
                     B: 'Mitochondria',
@@ -313,7 +355,7 @@ async function main() {
             },
             {
                 order: 2,
-                stem: 'What is the primary function of the Rough Endoplasmic Reticulum?',
+                stem: 'What is the primary function of the rough endoplasmic reticulum?',
                 options: {
                     A: 'Lipid synthesis',
                     B: 'Protein synthesis',
@@ -340,14 +382,13 @@ async function main() {
         ],
     })
 
-    const test2 = await upsertTest({
-        teacherId: teacher2.id,
-        createdById: admin.id,
-        title: 'Physics: Kinematics Basics',
-        description: 'Test on motion, velocity, acceleration and equations of motion.',
+    const paidPhysicsTest = await upsertTest({
+        title: 'CUET Physics Mock 2',
+        description: 'Paid batch mock covering motion, acceleration, and equations of motion.',
         durationMinutes: 45,
         status: 'PUBLISHED',
         source: 'AI_GENERATED',
+        createdById: admin.id,
         questions: [
             {
                 order: 1,
@@ -362,47 +403,136 @@ async function main() {
                 difficulty: 'HARD',
                 topic: 'Equations of Motion',
             },
+            {
+                order: 2,
+                stem: 'Which graph represents uniform velocity motion?',
+                options: {
+                    A: 'A curved displacement-time graph',
+                    B: 'A straight displacement-time graph with constant slope',
+                    C: 'A parabola on a velocity-time graph',
+                    D: 'A random zig-zag velocity-time graph',
+                    correct: 'B',
+                },
+                difficulty: 'EASY',
+                topic: 'Graphs of Motion',
+            },
         ],
     })
 
-    await ensureBatchAssignment(test1.id, batch1.id)
-    await ensureBatchAssignment(test2.id, batch2.id)
+    const freeMockTest = await upsertTest({
+        title: 'CUET Free Mock Demo',
+        description: 'Public free mock for lead capture and the single-attempt trial flow.',
+        durationMinutes: 20,
+        status: 'PUBLISHED',
+        source: 'MANUAL',
+        createdById: admin.id,
+        questions: [
+            {
+                order: 1,
+                stem: 'Which gas do plants absorb during photosynthesis?',
+                options: {
+                    A: 'Oxygen',
+                    B: 'Nitrogen',
+                    C: 'Carbon dioxide',
+                    D: 'Hydrogen',
+                    correct: 'C',
+                },
+                difficulty: 'EASY',
+                topic: 'Photosynthesis',
+            },
+            {
+                order: 2,
+                stem: 'The SI unit of force is:',
+                options: {
+                    A: 'Joule',
+                    B: 'Newton',
+                    C: 'Pascal',
+                    D: 'Watt',
+                    correct: 'B',
+                },
+                difficulty: 'EASY',
+                topic: 'Units and Dimensions',
+            },
+            {
+                order: 3,
+                stem: 'Which part of the cell contains genetic material?',
+                options: {
+                    A: 'Cell membrane',
+                    B: 'Nucleus',
+                    C: 'Cytoplasm',
+                    D: 'Golgi body',
+                    correct: 'B',
+                },
+                difficulty: 'EASY',
+                topic: 'Cell Basics',
+            },
+        ],
+    })
+
+    await upsertTest({
+        title: 'Admin Draft Chemistry Set',
+        description: 'Draft test for the admin test builder workflow.',
+        durationMinutes: 35,
+        status: 'DRAFT',
+        source: 'MANUAL',
+        createdById: admin.id,
+        questions: [
+            {
+                order: 1,
+                stem: 'What is the valency of oxygen in water?',
+                options: {
+                    A: '1',
+                    B: '2',
+                    C: '3',
+                    D: '4',
+                    correct: 'B',
+                },
+                difficulty: 'EASY',
+                topic: 'Chemical Bonding',
+            },
+        ],
+    })
+
+    await ensureBatchAssignment(paidBiologyTest.id, batchA.id)
+    await ensureBatchAssignment(paidPhysicsTest.id, batchB.id)
+    await ensureBatchAssignment(freeMockTest.id, freeBatch.id)
 
     const alice = students.get('Alice Patel')
     if (alice) {
-        const session = await upsertAliceSession(test1.id, alice.id)
+        const session = await upsertAliceSession(paidBiologyTest.id, alice.id)
 
         await prisma.aIFeedback.upsert({
             where: { testSessionId: session.id },
             update: {
                 strengths: ['Good understanding of cell organelles', 'Correct identification of mitochondria function'],
-                weaknesses: ['Confusion in mitosis phases'],
-                actionPlan: ['Review cell division phases', 'Practice mitosis vs meiosis comparison'],
+                weaknesses: ['Needs a clearer grasp of mitosis phases'],
+                actionPlan: ['Review cell division phases', 'Practice cell biology revision sets'],
                 questionExplanations: {
-                    3: 'Chromosomes align at the metaphase plate during Metaphase, not Prophase.',
+                    3: 'Chromosomes align at the metaphase plate during metaphase.',
                 },
-                overallTag: 'Intermediate',
+                overallTag: 'Building Momentum',
             },
             create: {
                 testSessionId: session.id,
                 strengths: ['Good understanding of cell organelles', 'Correct identification of mitochondria function'],
-                weaknesses: ['Confusion in mitosis phases'],
-                actionPlan: ['Review cell division phases', 'Practice mitosis vs meiosis comparison'],
+                weaknesses: ['Needs a clearer grasp of mitosis phases'],
+                actionPlan: ['Review cell division phases', 'Practice cell biology revision sets'],
                 questionExplanations: {
-                    3: 'Chromosomes align at the metaphase plate during Metaphase, not Prophase.',
+                    3: 'Chromosomes align at the metaphase plate during metaphase.',
                 },
-                overallTag: 'Intermediate',
+                overallTag: 'Building Momentum',
             },
         })
     }
 
+    await upsertDemoLead(freeMockTest.id)
+
     console.log('✅ Seeding complete!')
-    console.log('   Admin:    tohin1400@gmail.com')
-    console.log('   Teacher:  tohin14000@gmail.com')
-    console.log('   Teacher:  michael@unimonk.com')
+    console.log(`   Admin:    ${adminAccount.email}`)
     console.log('   Student:  tohin14001@gmail.com')
-    console.log(`   Free:     ${freeBatch.code} (${freeBatch.name})`)
-    console.log('   (All users login via email OTP — no passwords)')
+    console.log(`   Free:     ${FREE_BATCH_CODE} (${FREE_BATCH_NAME})`)
+    console.log('   Public free mock: CUET Free Mock Demo')
+    console.log('   (Admin and students login via email OTP. Public leads do not log in.)')
 }
 
 main()

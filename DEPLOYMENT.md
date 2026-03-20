@@ -118,7 +118,7 @@ Use Preview before Production and test these flows end-to-end:
 - autosave answers
 - submit test
 - AI feedback generation
-- teacher analytics
+- admin analytics
 - admin impersonation
 
 ## 6. Verify Background Jobs
@@ -129,11 +129,9 @@ The repo already includes:
 - `/api/webhooks/force-submit`
 - `/api/webhooks/qstash-dlq`
 - `/api/cron/reconcile-jobs`
-- `/api/cron/tests-retention`
 
 On Vercel, cron schedules come from [vercel.json](./vercel.json). After deploy, confirm that:
 
-- finished tests are being cleaned up
 - expired `IN_PROGRESS` sessions get reconciled
 - missing AI feedback gets re-enqueued
 

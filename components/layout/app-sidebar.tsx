@@ -12,7 +12,7 @@ import {
     SidebarMenuItem,
     SidebarFooter,
 } from "@/components/ui/sidebar";
-import { BookOpen, Users, LayoutDashboard, FileText, GraduationCap, FolderOpen, BarChart3, PlusCircle } from "lucide-react";
+import { Users, LayoutDashboard, FileText, GraduationCap, FolderOpen, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, UserRole } from "@/lib/auth-context";
@@ -50,25 +50,6 @@ const items: NavItem[] = [
         icon: FileText,
         roles: ["admin"],
     },
-    // Teacher
-    {
-        title: "Dashboard",
-        url: "/teacher/dashboard",
-        icon: LayoutDashboard,
-        roles: ["teacher"],
-    },
-    {
-        title: "My Tests",
-        url: "/teacher/tests",
-        icon: BookOpen,
-        roles: ["teacher"],
-    },
-    {
-        title: "Create Test",
-        url: "/teacher/tests/create",
-        icon: PlusCircle,
-        roles: ["teacher"],
-    },
     // Student
     {
         title: "Dashboard",
@@ -86,7 +67,6 @@ const items: NavItem[] = [
 
 const roleLabels: Record<UserRole, string> = {
     admin: "Administration",
-    teacher: "Teaching",
     student: "Learning",
 };
 

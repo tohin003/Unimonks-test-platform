@@ -90,7 +90,7 @@ export default function UserManagementPage() {
         const formData = new FormData(e.currentTarget);
         const name = formData.get("name") as string;
         const email = formData.get("email") as string;
-        const role = (formData.get("role") as string).toUpperCase();
+        const role = "STUDENT";
 
         const res = await apiClient.post("/api/admin/users", { name, email, role });
         if (res.ok) {
@@ -153,21 +153,21 @@ export default function UserManagementPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b pb-6 gap-4" style={{ borderColor: 'var(--border-soft)' }}>
                 <div>
                     <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-tight">User Management</h1>
-                    <p className="text-slate-500 mt-1">Manage platform users, roles, and access settings.</p>
+                    <p className="text-slate-500 mt-1">Manage the protected admin account and enrolled student access.</p>
                 </div>
 
                 <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
                     <DialogTrigger asChild>
                         <Button className="bg-primary hover:bg-primary/90 rounded-xl px-6 h-12 shadow-clay-inner text-white font-bold text-base">
                             <Plus className="h-5 w-5 mr-2" />
-                            Add New User
+                            Add Student
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-[425px] rounded-3xl p-6 border-0 shadow-clay-outer">
                         <DialogHeader>
-                            <DialogTitle className="font-serif text-2xl">Create New User</DialogTitle>
+                            <DialogTitle className="font-serif text-2xl">Create Student</DialogTitle>
                             <DialogDescription>
-                                Add a new user to the platform. They will receive a welcome email.
+                                Add an enrolled student account. The admin account is fixed and cannot be duplicated here.
                             </DialogDescription>
                         </DialogHeader>
                         <form onSubmit={handleCreateUser}>
@@ -180,23 +180,10 @@ export default function UserManagementPage() {
                                     <Label htmlFor="email" className="font-bold text-slate-700">Email Address</Label>
                                     <Input id="email" name="email" type="email" placeholder="alice@example.com" required className="rounded-xl h-11 bg-surface-2 border-transparent" />
                                 </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="role" className="font-bold text-slate-700">Role</Label>
-                                    <Select name="role" defaultValue="STUDENT">
-                                        <SelectTrigger className="rounded-xl h-11 bg-surface-2 border-transparent">
-                                            <SelectValue placeholder="Select a role" />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
-                                            <SelectItem value="STUDENT">Student</SelectItem>
-                                            <SelectItem value="TEACHER">Teacher</SelectItem>
-                                            <SelectItem value="ADMIN">Administrator</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
                             </div>
                             <DialogFooter>
                                 <Button type="submit" disabled={creating} className="w-full bg-primary hover:bg-primary/90 rounded-xl h-12 text-base font-bold shadow-clay-inner">
-                                    {creating ? "Creating..." : "Create User"}
+                                    {creating ? "Creating..." : "Create Student"}
                                 </Button>
                             </DialogFooter>
                         </form>
@@ -224,7 +211,6 @@ export default function UserManagementPage() {
                             <SelectContent className="rounded-xl">
                                 <SelectItem value="all">All Roles</SelectItem>
                                 <SelectItem value="student">Student</SelectItem>
-                                <SelectItem value="teacher">Teacher</SelectItem>
                                 <SelectItem value="admin">Admin</SelectItem>
                             </SelectContent>
                         </Select>
@@ -318,30 +304,38 @@ export default function UserManagementPage() {
                                                         </div>
                                                         <div className="grid gap-2">
                                                             <Label className="font-bold text-slate-700">Role</Label>
-                                                            <Select defaultValue={user.role}>
-                                                                <SelectTrigger data-field="role" className="rounded-xl h-11 bg-surface-2 border-transparent">
-                                                                    <SelectValue placeholder="Select a role" />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="rounded-xl">
-                                                                    <SelectItem value="STUDENT">Student</SelectItem>
-                                                                    <SelectItem value="TEACHER">Teacher</SelectItem>
-                                                                    <SelectItem value="ADMIN">Admin</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
+                                                            <Input
+                                                                value={user.role === "ADMIN" ? "Admin" : "Student"}
+                                                                disabled
+                                                                className="rounded-xl h-11 bg-slate-100 border-transparent text-slate-600"
+                                                            />
                                                         </div>
                                                         <div className="grid gap-2">
                                                             <Label className="font-bold text-slate-700">Status</Label>
-                                                            <Select defaultValue={user.status}>
-                                                                <SelectTrigger data-field="status" className="rounded-xl h-11 bg-surface-2 border-transparent">
-                                                                    <SelectValue placeholder="Select status" />
-                                                                </SelectTrigger>
-                                                                <SelectContent className="rounded-xl">
-                                                                    <SelectItem value="ACTIVE">Active</SelectItem>
-                                                                    <SelectItem value="INACTIVE">Inactive</SelectItem>
-                                                                    <SelectItem value="SUSPENDED">Suspended</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
+                                                            {user.role === "ADMIN" ? (
+                                                                <Input
+                                                                    value="ACTIVE"
+                                                                    disabled
+                                                                    className="rounded-xl h-11 bg-slate-100 border-transparent text-slate-600"
+                                                                />
+                                                            ) : (
+                                                                <Select defaultValue={user.status}>
+                                                                    <SelectTrigger data-field="status" className="rounded-xl h-11 bg-surface-2 border-transparent">
+                                                                        <SelectValue placeholder="Select status" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent className="rounded-xl">
+                                                                        <SelectItem value="ACTIVE">Active</SelectItem>
+                                                                        <SelectItem value="INACTIVE">Inactive</SelectItem>
+                                                                        <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            )}
                                                         </div>
+                                                        {user.role === "ADMIN" ? (
+                                                            <p className="text-xs text-slate-500">
+                                                                The primary admin account is protected from role, status, and deletion changes.
+                                                            </p>
+                                                        ) : null}
                                                     </div>
                                                     <div className="p-6 border-t bg-surface-2" style={{ borderColor: 'var(--border-soft)' }}>
                                                         <SheetFooter className="flex-col sm:flex-row gap-2">
@@ -356,7 +350,7 @@ export default function UserManagementPage() {
                                                     </div>
                                                 </SheetContent>
                                             </Sheet>
-                                            {user.status !== "INACTIVE" && (
+                                            {user.status !== "INACTIVE" && user.role !== "ADMIN" && (
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
